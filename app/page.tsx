@@ -1,4 +1,5 @@
-export default function HomePage() {
+
+import type { CSSProperties } from "react";export default function HomePage() {
   return (
     <main style={pageStyle}>
       <nav style={navStyle}>
@@ -88,7 +89,7 @@ const linkStyle = {
 };
 
 const heroStyle = {
-  textAlign: "center",
+  textAlign: "center" as const,
   padding: "80px 40px",
   backgroundColor: "#eff6ff",
 };
@@ -124,7 +125,7 @@ const sectionStyle = {
 };
 
 const sectionTitleStyle = {
-  textAlign: "center",
+  textAlign: "center" as const,
   fontSize: "32px",
   marginBottom: "32px",
   color: "#111827",
