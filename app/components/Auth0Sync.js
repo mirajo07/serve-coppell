@@ -6,6 +6,12 @@ export default function Auth0Sync() {
   useEffect(() => {
     async function syncAuth0User() {
       try {
+        const manualLogout = localStorage.getItem("manualLogout");
+
+        if (manualLogout === "true") {
+          return;
+        }
+
         const response = await fetch("/auth/profile", {
           cache: "no-store",
         });
@@ -57,6 +63,7 @@ export default function Auth0Sync() {
 
         localStorage.setItem("currentUser", JSON.stringify(appUser));
         window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(new Event("authChanged"));
 
         if (
           window.location.pathname === "/" ||

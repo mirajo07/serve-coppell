@@ -91,9 +91,10 @@ export default function LoginPage() {
     }
   }
 
-  function signInWithGoogle() {
-    window.location.href = "/auth/login";
-  }
+ function signInWithGoogle() {
+  localStorage.removeItem("manualLogout");
+  window.location.href = "/auth/login";
+}
 
   return (
     <main style={pageStyle}>

@@ -14,10 +14,12 @@ export default function AppNav() {
     loadCurrentUser();
 
     window.addEventListener("storage", loadCurrentUser);
+window.addEventListener("authChanged", loadCurrentUser);
 
-    return () => {
-      window.removeEventListener("storage", loadCurrentUser);
-    };
+return () => {
+  window.removeEventListener("storage", loadCurrentUser);
+  window.removeEventListener("authChanged", loadCurrentUser);
+};
   }, []);
 
   const logo = (
