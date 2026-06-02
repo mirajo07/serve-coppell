@@ -9,7 +9,7 @@ export default function TeacherPage() {
     const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
     if (!savedUser) {
-      window.location.href = "/login";
+      window.location.href = "/auth/logout";
       return;
     }
 
@@ -21,10 +21,14 @@ export default function TeacherPage() {
     setCurrentUser(savedUser);
   }, []);
 
-  function logout() {
+ function logout() {
+  localStorage.setItem("manualLogout", "true");
   localStorage.removeItem("currentUser");
+
   window.dispatchEvent(new Event("storage"));
-  window.location.href = "/login";
+  window.dispatchEvent(new Event("authChanged"));
+
+  window.location.href = "/auth/logout?returnTo=/login";
 }
 
   if (!currentUser) {

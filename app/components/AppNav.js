@@ -5,22 +5,23 @@ import { useEffect, useState } from "react";
 export default function AppNav() {
   const [currentUser, setCurrentUser] = useState(null);
 
-  useEffect(() => {
-    function loadCurrentUser() {
-      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
-      setCurrentUser(savedUser);
-    }
+useEffect(() => {
+  function loadCurrentUser() {
+    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+    setCurrentUser(savedUser);
+  }
 
-    loadCurrentUser();
+  loadCurrentUser();
 
-    window.addEventListener("storage", loadCurrentUser);
-window.addEventListener("authChanged", loadCurrentUser);
+  window.addEventListener("storage", loadCurrentUser);
+  window.addEventListener("authChanged", loadCurrentUser);
 
-return () => {
-  window.removeEventListener("storage", loadCurrentUser);
-  window.removeEventListener("authChanged", loadCurrentUser);
-};
-  }, []);
+  return () => {
+    window.removeEventListener("storage", loadCurrentUser);
+    window.removeEventListener("authChanged", loadCurrentUser);
+  };
+}, []);
+  
 
   const logo = (
     <a href="/" style={logoLinkStyle}>

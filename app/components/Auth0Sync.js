@@ -12,6 +12,12 @@ export default function Auth0Sync() {
           return;
         }
 
+        const existingUser = JSON.parse(localStorage.getItem("currentUser"));
+
+        if (existingUser) {
+          return;
+        }
+
         const response = await fetch("/auth/profile", {
           cache: "no-store",
         });
