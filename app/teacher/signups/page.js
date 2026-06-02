@@ -64,9 +64,9 @@ export default function TeacherSignupsPage() {
   }
 
   function logout() {
-    localStorage.removeItem("currentUser");
-    window.location.href = "/auth/logout";
-  }
+  localStorage.removeItem("currentUser");
+  window.dispatchEvent(new Event("storage"));
+  window.location.href = "/auth/logout?returnTo=/login";
 
   if (!currentUser) {
     return null;
