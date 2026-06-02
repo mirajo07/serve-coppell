@@ -6,12 +6,6 @@ export default function Auth0Sync() {
   useEffect(() => {
     async function syncAuth0User() {
       try {
-        const existingUser = JSON.parse(localStorage.getItem("currentUser"));
-
-        if (existingUser) {
-          return;
-        }
-
         const response = await fetch("/auth/profile", {
           cache: "no-store",
         });
@@ -40,34 +34,36 @@ export default function Auth0Sync() {
           );
         });
 
-        if (existingMatchingUser) {
-          localStorage.setItem(
-            "currentUser",
-            JSON.stringify(existingMatchingUser)
-          );
+        let appUser;
 
-          window.dispatchEvent(new Event("storage"));
-          return;
+        if (existingMatchingUser) {
+          appUser = existingMatchingUser;
+        } else {
+          appUser = {
+            displayName: auth0User.name || usernameFromEmail,
+            username: usernameFromEmail,
+            email: auth0User.email,
+            className: "Google Login",
+            password: "",
+            role: "student",
+            avatar: "🙂",
+            authProvider: "google",
+            createdAt: new Date().toLocaleString(),
+          };
+
+          const updatedUsers = [...users, appUser];
+          localStorage.setItem("users", JSON.stringify(updatedUsers));
         }
 
-        const newGoogleUser = {
-          displayName: auth0User.name || usernameFromEmail,
-          username: usernameFromEmail,
-          email: auth0User.email,
-          className: "Google Login",
-          password: "",
-          role: "student",
-          avatar: "🙂",
-          authProvider: "google",
-          createdAt: new Date().toLocaleString(),
-        };
-
-        const updatedUsers = [...users, newGoogleUser];
-
-        localStorage.setItem("users", JSON.stringify(updatedUsers));
-        localStorage.setItem("currentUser", JSON.stringify(newGoogleUser));
-
+        localStorage.setItem("currentUser", JSON.stringify(appUser));
         window.dispatchEvent(new Event("storage"));
+
+        if (
+          window.location.pathname === "/" ||
+          window.location.pathname === "/login"
+        ) {
+          window.location.replace("/student/profile");
+        }
       } catch (error) {
         console.log("Auth0 sync skipped:", error);
       }

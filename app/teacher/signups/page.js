@@ -11,7 +11,7 @@ export default function TeacherSignupsPage() {
     const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
     if (!savedUser) {
-      window.location.href = "/login";
+      window.location.href = "/auth/logout";
       return;
     }
 
@@ -65,7 +65,7 @@ export default function TeacherSignupsPage() {
 
   function logout() {
     localStorage.removeItem("currentUser");
-    window.location.href = "/login";
+    window.location.href = "/auth/logout";
   }
 
   if (!currentUser) {
