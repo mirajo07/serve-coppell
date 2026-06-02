@@ -63,14 +63,8 @@ export default function TeacherSignupsPage() {
     localStorage.setItem("volunteerSignups", JSON.stringify(updatedSignups));
   }
 
-  function logout() {
-  localStorage.removeItem("currentUser");
-  localStorage.setItem("manualLogout", "true");
-
-  window.dispatchEvent(new Event("storage"));
-  window.dispatchEvent(new Event("authChanged"));
-
-  window.location.href = "/auth/logout?returnTo=/login";
+function logout() {
+  window.location.href = "/logout";
 }
 
   if (!currentUser) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const [mode, setMode] = useState("login");
@@ -10,6 +10,16 @@ export default function LoginPage() {
   const [className, setClassName] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const manualLogout = localStorage.getItem("manualLogout");
+
+    if (manualLogout === "true") {
+      localStorage.removeItem("currentUser");
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new Event("authChanged"));
+    }
+  }, []);
 
   function clearForm() {
     setDisplayName("");
@@ -52,8 +62,10 @@ export default function LoginPage() {
 
     localStorage.setItem("users", JSON.stringify(updatedUsers));
     localStorage.setItem("currentUser", JSON.stringify(newUser));
+    localStorage.removeItem("manualLogout");
 
     window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(new Event("authChanged"));
 
     if (role === "teacher") {
       window.location.href = "/teacher";
@@ -82,7 +94,10 @@ export default function LoginPage() {
     }
 
     localStorage.setItem("currentUser", JSON.stringify(foundUser));
+    localStorage.removeItem("manualLogout");
+
     window.dispatchEvent(new Event("storage"));
+    window.dispatchEvent(new Event("authChanged"));
 
     if (foundUser.role.toLowerCase() === "teacher") {
       window.location.href = "/teacher";
@@ -91,10 +106,10 @@ export default function LoginPage() {
     }
   }
 
- function signInWithGoogle() {
-  localStorage.removeItem("manualLogout");
-  window.location.href = "/auth/login";
-}
+  function signInWithGoogle() {
+    localStorage.removeItem("manualLogout");
+    window.location.href = "/auth/login?returnTo=/auth-complete";
+  }
 
   return (
     <main style={pageStyle}>
