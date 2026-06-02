@@ -26,7 +26,7 @@ export default function TrackHoursPage() {
     const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
     if (!savedUser) {
-      window.location.href = "/login";
+      window.location.href = "/auth/logout";
       return;
     }
 

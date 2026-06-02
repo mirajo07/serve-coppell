@@ -22,10 +22,10 @@ export default function TeacherPage() {
   }, []);
 
   function logout() {
-    localStorage.removeItem("currentUser");
-    window.dispatchEvent(new Event("storage"));
-    window.location.href = "/login";
-  }
+  localStorage.removeItem("currentUser");
+  window.dispatchEvent(new Event("storage"));
+  window.location.href = "/login";
+}
 
   if (!currentUser) {
     return null;

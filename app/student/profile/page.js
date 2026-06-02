@@ -112,10 +112,10 @@ export default function StudentProfilePage() {
   }
 
   function logout() {
-    localStorage.removeItem("currentUser");
-    window.dispatchEvent(new Event("storage"));
-    window.location.href = "/login";
-  }
+  localStorage.removeItem("currentUser");
+  window.dispatchEvent(new Event("storage"));
+  window.location.href = "/login";
+}
 
   function goToPreviousMonth() {
     if (calendarMonth === 0) {

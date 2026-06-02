@@ -108,10 +108,10 @@ export default function TeacherClassPage() {
   }
 
   function logout() {
-    localStorage.removeItem("currentUser");
-    window.dispatchEvent(new Event("storage"));
-    window.location.href = "/login";
-  }
+  localStorage.removeItem("currentUser");
+  window.dispatchEvent(new Event("storage"));
+  window.location.href = "/login";
+}
 
   function formatStatus(status) {
     if (status === "pending") return "Pending";
