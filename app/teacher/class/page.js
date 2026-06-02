@@ -16,7 +16,7 @@ export default function TeacherClassPage() {
     const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
     if (!savedUser) {
-      window.location.href = "/login";
+      window.location.href = "/auth/logout";
       return;
     }
 
@@ -80,13 +80,38 @@ export default function TeacherClassPage() {
     }
 
     const newMember = {
-      username: student.username,
-      displayName: student.displayName,
-      className: student.className,
-      addedAt: new Date().toLocaleString(),
-    };
+  username: student.username,
+  displayName: student.displayName,
+  className: currentUser.className,
+  addedAt: new Date().toLocaleString(),
+};
 
-    const updatedRoster = [...roster, newMember];
+    const updatedUsers = users.map((user) => {
+  if (user.username === student.username) {
+    return {
+      ...user,
+      className: currentUser.className,
+    };
+  }
+
+  return user;
+});
+
+localStorage.setItem("users", JSON.stringify(updatedUsers));
+setUsers(updatedUsers);
+
+const loggedInUser = JSON.parse(localStorage.getItem("currentUser"));
+
+if (loggedInUser && loggedInUser.username === student.username) {
+  const updatedCurrentUser = {
+    ...loggedInUser,
+    className: currentUser.className,
+  };
+
+  localStorage.setItem("currentUser", JSON.stringify(updatedCurrentUser));
+  window.dispatchEvent(new Event("storage"));
+  window.dispatchEvent(new Event("authChanged"));
+}
 
     saveRoster(updatedRoster);
     setStudentUsernameToAdd("");
@@ -107,10 +132,8 @@ export default function TeacherClassPage() {
     setMessage("Student removed from class.");
   }
 
-  function logout() {
-  localStorage.removeItem("currentUser");
-  window.dispatchEvent(new Event("storage"));
-  window.location.href = "/login";
+function logout() {
+  window.location.href = "/logout";
 }
 
   function formatStatus(status) {
