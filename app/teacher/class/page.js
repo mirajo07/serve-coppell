@@ -16,12 +16,13 @@ export default function TeacherClassPage() {
     const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
     if (!savedUser) {
-      window.location.href = "/auth/logout";
+      window.location.href = "/login";
       return;
     }
 
-    if (savedUser.role.toLowerCase() !== "teacher") {
-      window.location.href = "/student";
+    if (!savedUser.role || savedUser.role.toLowerCase() !== "teacher") {
+      alert("Only teachers can manage a class.");
+      window.location.href = "/student/profile";
       return;
     }
 
@@ -53,20 +54,28 @@ export default function TeacherClassPage() {
   function addStudentToClass() {
     setMessage("");
 
-    if (!studentUsernameToAdd) {
+    const cleanedUsername = studentUsernameToAdd.trim();
+
+    if (!cleanedUsername) {
       setMessage("Please enter a student username.");
       return;
     }
 
-    const student = users.find((user) => {
+    const latestUsers = JSON.parse(localStorage.getItem("users")) || [];
+
+    const student = latestUsers.find((user) => {
       return (
-        user.username === studentUsernameToAdd &&
+        user.username &&
+        user.username.toLowerCase() === cleanedUsername.toLowerCase() &&
+        user.role &&
         user.role.toLowerCase() === "student"
       );
     });
 
     if (!student) {
-      setMessage("No student found with that username.");
+      setMessage(
+        "No student found with that username. Make sure the student account exists first."
+      );
       return;
     }
 
@@ -79,46 +88,72 @@ export default function TeacherClassPage() {
       return;
     }
 
+    const teacherClassName =
+      currentUser.className && currentUser.className.trim()
+        ? currentUser.className
+        : `${currentUser.displayName}'s Class`;
+
     const newMember = {
-  username: student.username,
-  displayName: student.displayName,
-  className: currentUser.className,
-  addedAt: new Date().toLocaleString(),
-};
-
-    const updatedUsers = users.map((user) => {
-  if (user.username === student.username) {
-    return {
-      ...user,
-      className: currentUser.className,
+      username: student.username,
+      displayName: student.displayName,
+      className: teacherClassName,
+      addedAt: new Date().toLocaleString(),
     };
-  }
 
-  return user;
-});
+    const updatedRoster = [...roster, newMember];
 
-localStorage.setItem("users", JSON.stringify(updatedUsers));
-setUsers(updatedUsers);
+    const updatedUsers = latestUsers.map((user) => {
+      if (user.username === student.username) {
+        return {
+          ...user,
+          className: teacherClassName,
+        };
+      }
 
-const loggedInUser = JSON.parse(localStorage.getItem("currentUser"));
+      return user;
+    });
 
-if (loggedInUser && loggedInUser.username === student.username) {
-  const updatedCurrentUser = {
-    ...loggedInUser,
-    className: currentUser.className,
-  };
+    localStorage.setItem("users", JSON.stringify(updatedUsers));
+    setUsers(updatedUsers);
 
-  localStorage.setItem("currentUser", JSON.stringify(updatedCurrentUser));
-  window.dispatchEvent(new Event("storage"));
-  window.dispatchEvent(new Event("authChanged"));
-}
+    const loggedInUser = JSON.parse(localStorage.getItem("currentUser"));
+
+    if (loggedInUser && loggedInUser.username === student.username) {
+      const updatedCurrentUser = {
+        ...loggedInUser,
+        className: teacherClassName,
+      };
+
+      localStorage.setItem("currentUser", JSON.stringify(updatedCurrentUser));
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new Event("authChanged"));
+    }
 
     saveRoster(updatedRoster);
+
     setStudentUsernameToAdd("");
-    setMessage("Student added to class.");
+    setMessage(
+      `${student.displayName} was added to ${teacherClassName}. The student will see this class on their dashboard after they log in or refresh.`
+    );
   }
 
   function removeStudentFromClass(studentUsername) {
+    const studentToRemove = roster.find((member) => {
+      return member.username === studentUsername;
+    });
+
+    if (!studentToRemove) {
+      return;
+    }
+
+    const confirmRemove = window.confirm(
+      `Are you sure you want to remove ${studentToRemove.displayName} from your class?`
+    );
+
+    if (!confirmRemove) {
+      return;
+    }
+
     const updatedRoster = roster.filter((member) => {
       return member.username !== studentUsername;
     });
@@ -132,18 +167,18 @@ if (loggedInUser && loggedInUser.username === student.username) {
     setMessage("Student removed from class.");
   }
 
-function logout() {
-  window.location.href = "/logout";
-}
+  function logout() {
+    window.location.href = "/logout";
+  }
 
   function formatStatus(status) {
     if (status === "pending") return "Pending";
     if (status === "approved") return "Approved to Volunteer";
     if (status === "needs-signature") return "Needs Teacher Signature";
-    if (status === "completed") return "Completed / Hours Counted";
+    if (status === "completed") return "Completed";
     if (status === "disapproved") return "Disapproved";
     if (status === "submitted") return "Submitted";
-    return status;
+    return status || "Submitted";
   }
 
   function getStudentManualEntries(studentUsername) {
@@ -163,22 +198,23 @@ function logout() {
   }
 
   function getStudentAllActivityRecords(studentUsername) {
-    const manualRecords = getStudentManualEntries(studentUsername).map((entry) => {
-      return {
-        id: `manual-${entry.id}`,
-        type: "Tracked Activity",
-        title: entry.activityName,
-        organization: entry.organization,
-        contact: entry.organizationContact || "Not provided",
-        category: entry.category || "Not listed",
-        date: entry.date || "No date entered",
-        hours: Number(entry.hours) || 0,
-        status: entry.status || "submitted",
-        notes: entry.notes || "No notes entered",
-        signature: entry.signature || "Not provided",
-        attachmentName: entry.attachmentName || "",
-      };
-    });
+    const manualRecords = getStudentManualEntries(studentUsername).map(
+      (entry) => {
+        return {
+          id: `manual-${entry.id}`,
+          type: "Tracked Activity",
+          title: entry.activityName,
+          organization: entry.organization,
+          contact: entry.organizationContact || "Not provided",
+          category: entry.category || "Not listed",
+          date: entry.date || "No date entered",
+          hours: Number(entry.hours) || 0,
+          status: entry.status || "submitted",
+          notes: entry.notes || "No notes entered",
+          attachmentName: entry.attachmentName || "",
+        };
+      }
+    );
 
     const teacherRecords = getStudentCompletedTeacherEntries(
       studentUsername
@@ -194,7 +230,6 @@ function logout() {
         hours: Number(signup.opportunityHours) || 0,
         status: signup.status,
         notes: `Location: ${signup.opportunityLocation || "No location listed"}`,
-        signature: signup.teacherSignedBy || signup.teacherName || "Teacher signed",
         attachmentName: "",
       };
     });
@@ -249,7 +284,8 @@ function logout() {
         </p>
 
         <p style={userInfoStyle}>
-          Teacher: {currentUser.displayName} | Class: {currentUser.className}
+          Teacher: {currentUser.displayName} | Class:{" "}
+          {currentUser.className || `${currentUser.displayName}'s Class`}
         </p>
 
         <button style={logoutButtonStyle} onClick={logout}>
@@ -280,6 +316,8 @@ function logout() {
 
           <p style={helperTextStyle}>
             Enter the student’s username exactly as they used it during signup.
+            This works for both demo student accounts and Google-created student
+            accounts.
           </p>
 
           <div style={inputRowStyle}>
@@ -319,6 +357,7 @@ function logout() {
                   >
                     <strong>{member.displayName}</strong>
                     <span style={usernameTextStyle}>@{member.username}</span>
+                    <span style={classTextStyle}>{member.className}</span>
                     <span style={hoursPreviewStyle}>
                       {getStudentTotalHours(member.username)} total hours
                     </span>
@@ -415,10 +454,6 @@ function logout() {
 
                       <p>
                         <strong>Notes:</strong> {record.notes}
-                      </p>
-
-                      <p>
-                        <strong>Signature:</strong> {record.signature}
                       </p>
 
                       {record.attachmentName && (
@@ -629,6 +664,13 @@ const usernameTextStyle = {
   display: "block",
   color: "#6b7280",
   marginTop: "4px",
+};
+
+const classTextStyle = {
+  display: "block",
+  color: "#2563eb",
+  marginTop: "4px",
+  fontWeight: 700,
 };
 
 const hoursPreviewStyle = {
