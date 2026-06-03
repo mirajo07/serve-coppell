@@ -106,11 +106,12 @@ export default function LoginPage() {
     }
   }
 
-  function signInWithGoogle() {
-    localStorage.removeItem("manualLogout");
-    window.location.href = "/auth/login?returnTo=/auth-complete";
-  }
-
+function signInWithGoogle() {
+  localStorage.removeItem("manualLogout");
+  window.location.href =
+    "/auth/login?returnTo=/auth-complete&connection=google-oauth2&prompt=select_account";
+}
+}
   return (
     <main style={pageStyle}>
       <section style={loginCardStyle}>
@@ -222,7 +223,7 @@ export default function LoginPage() {
       </section>
     </main>
   );
-}
+
 
 const pageStyle = {
   fontFamily: "Roboto, Segoe UI, Arial",
