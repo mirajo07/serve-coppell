@@ -109,7 +109,7 @@ export default function LoginPage() {
 function signInWithGoogle() {
   localStorage.removeItem("manualLogout");
   window.location.href =
-    "/auth/login?returnTo=/auth-complete&connection=google-oauth2&prompt=select_account";
+    "/auth/login?returnTo=%2Fauth-complete&connection=google-oauth2&prompt=select_account&max_age=0";
 }
 }
   return (
