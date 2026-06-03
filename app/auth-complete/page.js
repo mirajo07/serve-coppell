@@ -24,32 +24,70 @@ export default function AuthCompletePage() {
           return;
         }
 
+        const email = auth0User.email.toLowerCase();
+
+        let role = "";
+        let className = "";
+
+        if (email.endsWith("@g.coppellisd.com")) {
+          role = "student";
+          className = "Not assigned yet";
+        } else if (email.endsWith("@coppellisd.com")) {
+          role = "teacher";
+          className = "Teacher Class";
+        } else {
+          localStorage.removeItem("currentUser");
+          localStorage.setItem("manualLogout", "true");
+
+          window.dispatchEvent(new Event("storage"));
+          window.dispatchEvent(new Event("authChanged"));
+
+          window.location.replace("/auth/logout?returnTo=/unauthorized");
+          return;
+        }
+
         const users = JSON.parse(localStorage.getItem("users")) || [];
 
-        const usernameFromEmail = auth0User.email
+        const usernameFromEmail = email
           .split("@")[0]
           .toLowerCase()
           .replace(/[^a-z0-9]/g, "");
 
         const existingUser = users.find((user) => {
-          return (
-            user.email === auth0User.email ||
-            user.username === usernameFromEmail
-          );
+          return user.email === email || user.username === usernameFromEmail;
         });
 
         let appUser;
 
         if (existingUser) {
-          appUser = existingUser;
+          appUser = {
+            ...existingUser,
+            role: role,
+            email: email,
+            className:
+              existingUser.className &&
+              existingUser.className !== "Google Login"
+                ? existingUser.className
+                : className,
+          };
+
+          const updatedUsers = users.map((user) => {
+            if (user.username === existingUser.username) {
+              return appUser;
+            }
+
+            return user;
+          });
+
+          localStorage.setItem("users", JSON.stringify(updatedUsers));
         } else {
           appUser = {
             displayName: auth0User.name || usernameFromEmail,
             username: usernameFromEmail,
-            email: auth0User.email,
-            className: "Google Login",
+            email: email,
+            className: className,
             password: "",
-            role: "student",
+            role: role,
             avatar: "🙂",
             authProvider: "google",
             createdAt: new Date().toLocaleString(),
@@ -59,10 +97,15 @@ export default function AuthCompletePage() {
         }
 
         localStorage.setItem("currentUser", JSON.stringify(appUser));
+
         window.dispatchEvent(new Event("storage"));
         window.dispatchEvent(new Event("authChanged"));
 
-        window.location.replace("/student/profile");
+        if (role === "teacher") {
+          window.location.replace("/teacher");
+        } else {
+          window.location.replace("/student/profile");
+        }
       } catch (error) {
         console.log(error);
         window.location.href = "/login";

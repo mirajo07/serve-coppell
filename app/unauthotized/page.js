@@ -5,10 +5,14 @@ export default function UnauthorizedPage() {
         <h1 style={titleStyle}>Access Not Allowed</h1>
 
         <p style={textStyle}>
-          Please sign in with your Coppell ISD Google account.
+          Please sign in with a Coppell ISD Google account.
         </p>
 
-        <p style={emailStyle}>Allowed email format: @g.coppellisd.com</p>
+        <p style={emailStyle}>
+          Students: @g.coppellisd.com
+          <br />
+          Teachers: @coppellisd.com
+        </p>
 
         <a href="/login" style={buttonStyle}>
           Back to Login
@@ -35,7 +39,7 @@ const cardStyle = {
   border: "1px solid #d1d5db",
   boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
   textAlign: "center",
-  maxWidth: "480px",
+  maxWidth: "520px",
 };
 
 const titleStyle = {
@@ -54,6 +58,7 @@ const emailStyle = {
   color: "#111827",
   fontWeight: 800,
   marginTop: "18px",
+  lineHeight: "1.7",
 };
 
 const buttonStyle = {

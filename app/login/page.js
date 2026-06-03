@@ -106,12 +106,13 @@ export default function LoginPage() {
     }
   }
 
-function signInWithGoogle() {
-  localStorage.removeItem("manualLogout");
-  window.location.href =
-    "/auth/login?returnTo=%2Fauth-complete&connection=google-oauth2&prompt=select_account&max_age=0";
-}
-}
+  function signInWithGoogle() {
+    localStorage.removeItem("manualLogout");
+
+    window.location.href =
+      "/auth/login?returnTo=%2Fauth-complete&connection=google-oauth2&prompt=login&max_age=0";
+  }
+
   return (
     <main style={pageStyle}>
       <section style={loginCardStyle}>
@@ -218,12 +219,13 @@ function signInWithGoogle() {
         {message && <p style={messageStyle}>{message}</p>}
 
         <p style={helperTextStyle}>
-          Google sign-in uses Auth0. Demo login still uses localStorage for now.
+          Google sign-in uses Coppell ISD Google accounts. Demo login still uses
+          localStorage for now.
         </p>
       </section>
     </main>
   );
-
+}
 
 const pageStyle = {
   fontFamily: "Roboto, Segoe UI, Arial",
