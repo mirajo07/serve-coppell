@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function TrackHoursPage() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -23,23 +24,54 @@ export default function TrackHoursPage() {
   const [confirmAction, setConfirmAction] = useState(null);
 
   useEffect(() => {
-    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+    async function loadHours() {
+      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
-    if (!savedUser) {
-      window.location.href = "/auth/logout";
-      return;
+      if (!savedUser) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (savedUser.role.toLowerCase() !== "student") {
+        alert("Only students can track volunteer hours.");
+        window.location.href = "/teacher";
+        return;
+      }
+
+      setCurrentUser(savedUser);
+
+      const { data, error } = await supabase
+        .from("volunteer_hours")
+        .select("*")
+        .eq("student_username", savedUser.username)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error loading volunteer hours:", error);
+        setMessage("Could not load saved hours.");
+        return;
+      }
+
+      const formattedHours = data.map((entry) => ({
+        id: entry.id,
+        studentUsername: entry.student_username,
+        studentName: entry.student_name,
+        className: entry.class_name,
+        activityName: entry.event_name,
+        organization: entry.organization,
+        organizationContact: entry.organization_contact,
+        category: entry.category,
+        date: entry.event_date,
+        hours: entry.hours,
+        notes: entry.notes,
+        attachmentName: entry.attachment_name,
+        status: entry.status,
+      }));
+
+      setSavedHours(formattedHours);
     }
 
-    if (savedUser.role.toLowerCase() !== "student") {
-      alert("Only students can track volunteer hours.");
-      window.location.href = "/teacher";
-      return;
-    }
-
-    setCurrentUser(savedUser);
-
-    const storedHours = JSON.parse(localStorage.getItem("volunteerHours")) || [];
-    setSavedHours(storedHours);
+    loadHours();
   }, []);
 
   function clearForm() {
@@ -61,7 +93,7 @@ export default function TrackHoursPage() {
     setShowConfirmPopup(true);
   }
 
-  function saveHours() {
+  async function saveHours() {
     if (
       !activityName ||
       !organization ||
@@ -76,26 +108,50 @@ export default function TrackHoursPage() {
       return;
     }
 
-    const newEntry = {
-      id: Date.now(),
-      studentUsername: currentUser.username,
-      studentName: currentUser.displayName,
-      className: currentUser.className,
-      activityName: activityName,
-      organization: organization,
-      organizationContact: organizationContact,
-      category: category,
-      date: date,
-      hours: hours,
-      notes: notes,
-      attachmentName: attachmentName,
-      status: "submitted",
+    const newEntryForSupabase = {
+      student_username: currentUser.username,
+      student_name: currentUser.displayName,
+      class_name: currentUser.className || "",
+      event_name: activityName,
+      organization,
+      organization_contact: organizationContact,
+      category,
+      event_date: date,
+      hours: Number(hours),
+      notes,
+      attachment_name: attachmentName,
+      status: "approved",
     };
 
-    const updatedHours = [...savedHours, newEntry];
+    const { data, error } = await supabase
+      .from("volunteer_hours")
+      .insert([newEntryForSupabase])
+      .select()
+      .single();
 
-    setSavedHours(updatedHours);
-    localStorage.setItem("volunteerHours", JSON.stringify(updatedHours));
+    if (error) {
+      console.error("Error saving volunteer hours:", error);
+      setMessage("Hours could not be saved.");
+      return;
+    }
+
+    const newEntryForPage = {
+      id: data.id,
+      studentUsername: data.student_username,
+      studentName: data.student_name,
+      className: data.class_name,
+      activityName: data.event_name,
+      organization: data.organization,
+      organizationContact: data.organization_contact,
+      category: data.category,
+      date: data.event_date,
+      hours: data.hours,
+      notes: data.notes,
+      attachmentName: data.attachment_name,
+      status: data.status,
+    };
+
+    setSavedHours((previousHours) => [newEntryForPage, ...previousHours]);
 
     clearForm();
     setMessage("Hours saved successfully.");
@@ -108,13 +164,23 @@ export default function TrackHoursPage() {
     setShowConfirmPopup(true);
   }
 
-  function deleteEntry(entryId) {
+  async function deleteEntry(entryId) {
+    const { error } = await supabase
+      .from("volunteer_hours")
+      .delete()
+      .eq("id", entryId);
+
+    if (error) {
+      console.error("Error deleting volunteer hour entry:", error);
+      setMessage("Hour entry could not be deleted.");
+      return;
+    }
+
     const updatedHours = savedHours.filter((entry) => {
       return entry.id !== entryId;
     });
 
     setSavedHours(updatedHours);
-    localStorage.setItem("volunteerHours", JSON.stringify(updatedHours));
     setMessage("Hour entry deleted.");
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function OpportunitiesPage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -10,15 +11,68 @@ export default function OpportunitiesPage() {
   const [signups, setSignups] = useState([]);
 
   useEffect(() => {
-    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
-    const storedTeacherOpportunities =
-      JSON.parse(localStorage.getItem("teacherOpportunities")) || [];
-    const storedSignups =
-      JSON.parse(localStorage.getItem("volunteerSignups")) || [];
+    async function loadData() {
+      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+      setCurrentUser(savedUser);
 
-    setCurrentUser(savedUser);
-    setTeacherOpportunities(storedTeacherOpportunities);
-    setSignups(storedSignups);
+      const { data: signupData, error: signupError } = await supabase
+        .from("signups")
+        .select("*");
+
+      if (signupError) {
+        console.error("Error loading Supabase signups:", signupError);
+      } else {
+        const formattedSignups = signupData.map((signup) => ({
+          id: signup.id,
+          studentUsername: signup.student_username,
+          studentName: signup.student_name,
+          className: signup.class_name,
+          opportunityId: signup.opportunity_id,
+          opportunityTitle: signup.opportunity_title,
+          opportunityLocation: signup.opportunity_location,
+          opportunityHours: signup.opportunity_hours,
+          teacherName: signup.teacher_name,
+          teacherUsername: signup.teacher_username,
+          status: signup.status,
+          source: signup.source,
+        }));
+
+        setSignups(formattedSignups);
+      }
+
+      const { data: opportunityData, error: opportunityError } = await supabase
+        .from("opportunities")
+        .select("*")
+        .order("event_date", { ascending: true });
+
+      if (opportunityError) {
+        console.error(
+          "Error loading Supabase opportunities:",
+          opportunityError
+        );
+        alert("Could not load teacher opportunities from Supabase.");
+        return;
+      }
+
+      const formattedOpportunities = opportunityData.map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        location: item.location,
+        eventDate: item.event_date,
+        startTime: item.start_time || "",
+        endTime: item.end_time || "",
+        hours: item.hours || 1,
+        category: item.category || "Teacher Uploaded",
+        maxSpots: item.max_spots || "",
+        teacherName: item.teacher_name || "Unknown Teacher",
+        teacherUsername: item.teacher_username || "unknown",
+      }));
+
+      setTeacherOpportunities(formattedOpportunities);
+    }
+
+    loadData();
   }, []);
 
   function openDirections(destination) {
@@ -34,7 +88,7 @@ export default function OpportunitiesPage() {
     window.open(mapsUrl, "_blank");
   }
 
-  function signUpForTeacherOpportunity(opportunity) {
+  async function signUpForTeacherOpportunity(opportunity) {
     if (!currentUser) {
       alert("Please log in before signing up.");
       window.location.href = "/login";
@@ -73,24 +127,48 @@ export default function OpportunitiesPage() {
       return;
     }
 
-    const newSignup = {
-      id: Date.now(),
-      studentUsername: currentUser.username,
-      studentName: currentUser.displayName,
-      className: currentUser.className,
-      opportunityTitle: opportunity.title,
-      opportunityLocation: opportunity.location,
-      opportunityHours: opportunity.hours,
-      teacherName: opportunity.teacherName || "Unknown Teacher",
-      teacherUsername: opportunity.teacherUsername || "unknown",
+    const newSignupForSupabase = {
+      student_username: currentUser.username,
+      student_name: currentUser.displayName,
+      class_name: currentUser.className || "",
+      opportunity_id: opportunity.id,
+      opportunity_title: opportunity.title,
+      opportunity_location: opportunity.location,
+      opportunity_hours: opportunity.hours,
+      teacher_name: opportunity.teacherName || "Unknown Teacher",
+      teacher_username: opportunity.teacherUsername || "unknown",
       status: "pending",
       source: "teacher-opportunity-signup",
     };
 
-    const updatedSignups = [...signups, newSignup];
+    const { data, error } = await supabase
+      .from("signups")
+      .insert([newSignupForSupabase])
+      .select()
+      .single();
 
-    setSignups(updatedSignups);
-    localStorage.setItem("volunteerSignups", JSON.stringify(updatedSignups));
+    if (error) {
+      console.error("Error saving signup:", error);
+      alert("Signup failed. Please try again.");
+      return;
+    }
+
+    const newSignupForPage = {
+      id: data.id,
+      studentUsername: data.student_username,
+      studentName: data.student_name,
+      className: data.class_name,
+      opportunityId: data.opportunity_id,
+      opportunityTitle: data.opportunity_title,
+      opportunityLocation: data.opportunity_location,
+      opportunityHours: data.opportunity_hours,
+      teacherName: data.teacher_name,
+      teacherUsername: data.teacher_username,
+      status: data.status,
+      source: data.source,
+    };
+
+    setSignups((previousSignups) => [...previousSignups, newSignupForPage]);
 
     alert("Signup submitted for teacher approval!");
   }
@@ -569,7 +647,10 @@ export default function OpportunitiesPage() {
 
   const allCategories = [
     "All",
-    ...new Set(communityOpportunities.map((opportunity) => opportunity.category)),
+    ...new Set([
+      ...communityOpportunities.map((opportunity) => opportunity.category),
+      ...teacherOpportunities.map((opportunity) => opportunity.category),
+    ]),
   ];
 
   const filteredTeacherOpportunities =
@@ -589,14 +670,24 @@ export default function OpportunitiesPage() {
   return (
     <main style={pageStyle}>
       <nav style={navStyle}>
-        <h2 style={logoStyle}>Volunteer Connect</h2>
+        <h2 style={logoStyle}>Vonnect</h2>
 
         <div style={navLinksStyle}>
-          <a href="/" style={linkStyle}>Home</a>
-          <a href="/opportunities" style={linkStyle}>Opportunities</a>
-          <a href="/track-hours" style={linkStyle}>Track Hours</a>
-          <a href="/leaderboard" style={linkStyle}>Leaderboard</a>
-          <a href="/about" style={linkStyle}>About</a>
+          <a href="/" style={linkStyle}>
+            Home
+          </a>
+          <a href="/opportunities" style={linkStyle}>
+            Opportunities
+          </a>
+          <a href="/track-hours" style={linkStyle}>
+            Track Hours
+          </a>
+          <a href="/leaderboard" style={linkStyle}>
+            Leaderboard
+          </a>
+          <a href="/about" style={linkStyle}>
+            About
+          </a>
         </div>
       </nav>
 
@@ -604,7 +695,8 @@ export default function OpportunitiesPage() {
         <h1 style={titleStyle}>Volunteer Opportunities</h1>
         <p style={subtitleStyle}>
           Browse Coppell-area volunteer opportunities and teacher-created
-          opportunities to make your search easy and find the perfect fit for your interests and schedule.
+          opportunities to make your search easy and find the perfect fit for
+          your interests and schedule.
         </p>
 
         {currentUser ? (
@@ -613,7 +705,10 @@ export default function OpportunitiesPage() {
           </p>
         ) : (
           <p style={loginTextStyle}>
-            <a href="/login" style={loginLinkStyle}>Log in</a> to sign up for teacher activities.
+            <a href="/login" style={loginLinkStyle}>
+              Log in
+            </a>{" "}
+            to sign up for teacher activities.
           </p>
         )}
       </section>
@@ -778,7 +873,9 @@ export default function OpportunitiesPage() {
               <button
                 style={directionsButtonStyle}
                 onClick={() =>
-                  openDirections(`${opportunity.title}, ${opportunity.area}, Texas`)
+                  openDirections(
+                    `${opportunity.title}, ${opportunity.area}, Texas`
+                  )
                 }
               >
                 Get Distance / Directions
@@ -800,8 +897,7 @@ export default function OpportunitiesPage() {
 }
 
 const pageStyle = {
-   fontFamily: "Roboto,Segoe UI, Arial",
-  
+  fontFamily: "Roboto,Segoe UI, Arial",
   backgroundColor: "#f9fafb",
   minHeight: "100vh",
 };
@@ -828,8 +924,7 @@ const navLinksStyle = {
 const linkStyle = {
   color: "#374151",
   fontSize: "16px",
-   fontFamily: "Roboto,Segoe UI, Arial",
-
+  fontFamily: "Roboto,Segoe UI, Arial",
   cursor: "pointer",
   textDecoration: "none",
 };
@@ -837,27 +932,27 @@ const linkStyle = {
 const headerStyle = {
   padding: "60px 40px",
   textAlign: "center",
-   backgroundColor: "#c7ebfa",
+  backgroundColor: "#c7ebfa",
 };
 
 const titleStyle = {
   fontSize: "42px",
   marginBottom: "16px",
   color: "#111827",
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const subtitleStyle = {
   fontSize: "18px",
   color: "#374151",
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const loginTextStyle = {
   marginTop: "16px",
   color: "#374151",
   fontWeight: 700,
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const loginLinkStyle = {
@@ -879,7 +974,7 @@ const filterLabelStyle = {
   marginBottom: "8px",
   fontSize: "16px",
   fontWeight: 600,
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
   color: "#111827",
 };
 
@@ -890,7 +985,7 @@ const selectStyle = {
   fontSize: "16px",
   color: "#111827",
   backgroundColor: "white",
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
   minWidth: "260px",
 };
 
@@ -909,7 +1004,7 @@ const sectionHeadingStyle = {
   fontSize: "28px",
   color: "#111827",
   marginBottom: "20px",
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const listStyle = {
@@ -931,7 +1026,7 @@ const teacherCardStyle = {
   padding: "28px",
   borderRadius: "16px",
   border: "2px solid #f59e0b",
- boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
+  boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
 };
 
 const categoryStyle = {
@@ -942,7 +1037,7 @@ const categoryStyle = {
   borderRadius: "999px",
   fontSize: "14px",
   fontWeight: 600,
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const teacherBadgeStyle = {
@@ -953,7 +1048,7 @@ const teacherBadgeStyle = {
   borderRadius: "999px",
   fontSize: "14px",
   fontWeight: 700,
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const cardTitleStyle = {
@@ -976,7 +1071,7 @@ const spotsStyle = {
 const emptyTextStyle = {
   color: "#6b7280",
   fontSize: "16px",
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const buttonStyle = {
@@ -988,7 +1083,7 @@ const buttonStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 600,
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const directionsButtonStyle = {
@@ -1001,7 +1096,7 @@ const directionsButtonStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 600,
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const signupButtonStyle = {
@@ -1013,8 +1108,7 @@ const signupButtonStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 600,
-   fontFamily: "Roboto,Segoe UI, Arial",
-
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const fullButtonStyle = {
@@ -1026,8 +1120,7 @@ const fullButtonStyle = {
   borderRadius: "8px",
   cursor: "not-allowed",
   fontWeight: 600,
-   fontFamily: "Roboto,Segoe UI, Arial",
-  
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const detailsStyle = {
@@ -1042,8 +1135,7 @@ const summaryStyle = {
   cursor: "pointer",
   fontWeight: 700,
   color: "#111827",
-   fontFamily: "Roboto,Segoe UI, Arial",
-
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const approvedListStyle = {

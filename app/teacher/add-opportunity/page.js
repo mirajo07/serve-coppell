@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function AddOpportunityPage() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -24,24 +25,56 @@ export default function AddOpportunityPage() {
   const [confirmAction, setConfirmAction] = useState(null);
 
   useEffect(() => {
-    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+    async function loadOpportunities() {
+      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
-    if (!savedUser) {
-      window.location.href = "/login";
-      return;
+      if (!savedUser) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (savedUser.role.toLowerCase() !== "teacher") {
+        window.location.href = "/student";
+        return;
+      }
+
+      setCurrentUser(savedUser);
+
+      const { data, error } = await supabase
+        .from("opportunities")
+        .select("*")
+        .eq("teacher_username", savedUser.username)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error loading opportunities:", error);
+        setMessage("Could not load your posted opportunities.");
+        return;
+      }
+
+      const formattedOpportunities = data.map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        location: item.location,
+        hours: item.hours,
+        eventDate: item.event_date,
+        startTime: item.start_time,
+        endTime: item.end_time,
+        category: item.category,
+        maxSpots: item.max_spots,
+        teacherName: item.teacher_name,
+        teacherUsername: item.teacher_username,
+        className: item.class_name,
+        createdAt: item.created_at
+          ? new Date(item.created_at).toLocaleString()
+          : "",
+      }));
+
+      setTeacherOpportunities(formattedOpportunities);
     }
 
-    if (savedUser.role.toLowerCase() !== "teacher") {
-      window.location.href = "/student";
-      return;
-    }
-
-    setCurrentUser(savedUser);
-
-    const storedOpportunities =
-      JSON.parse(localStorage.getItem("teacherOpportunities")) || [];
-
-    setTeacherOpportunities(storedOpportunities);
+    loadOpportunities();
   }, []);
 
   function clearForm() {
@@ -63,7 +96,7 @@ export default function AddOpportunityPage() {
     setShowConfirmPopup(true);
   }
 
-  function saveOpportunity() {
+  async function saveOpportunity() {
     if (
       !title ||
       !description ||
@@ -78,30 +111,56 @@ export default function AddOpportunityPage() {
       return;
     }
 
-    const newOpportunity = {
-      id: Date.now(),
-      title: title,
-      description: description,
-      location: location,
-      hours: hours,
-      eventDate: eventDate,
-      startTime: startTime,
-      endTime: endTime,
-      category: category,
-      maxSpots: maxSpots,
-      teacherName: currentUser.displayName,
-      teacherUsername: currentUser.username,
-      className: currentUser.className,
-      createdAt: new Date().toLocaleString(),
+    const newOpportunityForSupabase = {
+      title,
+      description,
+      location,
+      hours: Number(hours),
+      event_date: eventDate,
+      start_time: startTime,
+      end_time: endTime,
+      category,
+      max_spots: Number(maxSpots),
+      teacher_name: currentUser.displayName,
+      teacher_username: currentUser.username,
+      class_name: currentUser.className || "",
     };
 
-    const updatedOpportunities = [...teacherOpportunities, newOpportunity];
+    const { data, error } = await supabase
+      .from("opportunities")
+      .insert([newOpportunityForSupabase])
+      .select()
+      .single();
 
-    setTeacherOpportunities(updatedOpportunities);
-    localStorage.setItem(
-      "teacherOpportunities",
-      JSON.stringify(updatedOpportunities)
-    );
+    if (error) {
+      console.error("Error saving opportunity:", error);
+      setMessage("Opportunity could not be saved.");
+      return;
+    }
+
+    const newOpportunityForPage = {
+      id: data.id,
+      title: data.title,
+      description: data.description,
+      location: data.location,
+      hours: data.hours,
+      eventDate: data.event_date,
+      startTime: data.start_time,
+      endTime: data.end_time,
+      category: data.category,
+      maxSpots: data.max_spots,
+      teacherName: data.teacher_name,
+      teacherUsername: data.teacher_username,
+      className: data.class_name,
+      createdAt: data.created_at
+        ? new Date(data.created_at).toLocaleString()
+        : new Date().toLocaleString(),
+    };
+
+    setTeacherOpportunities((previous) => [
+      newOpportunityForPage,
+      ...previous,
+    ]);
 
     clearForm();
     setMessage("Opportunity saved successfully!");
@@ -117,32 +176,23 @@ export default function AddOpportunityPage() {
     setShowConfirmPopup(true);
   }
 
-  function deleteOpportunity(opportunityId) {
-    const opportunityToDelete = teacherOpportunities.find((opportunity) => {
-      return opportunity.id === opportunityId;
-    });
+  async function deleteOpportunity(opportunityId) {
+    const { error } = await supabase
+      .from("opportunities")
+      .delete()
+      .eq("id", opportunityId);
+
+    if (error) {
+      console.error("Error deleting opportunity:", error);
+      setMessage("Opportunity could not be deleted.");
+      return;
+    }
 
     const updatedOpportunities = teacherOpportunities.filter((opportunity) => {
       return opportunity.id !== opportunityId;
     });
 
     setTeacherOpportunities(updatedOpportunities);
-    localStorage.setItem(
-      "teacherOpportunities",
-      JSON.stringify(updatedOpportunities)
-    );
-
-    if (opportunityToDelete) {
-      const existingSignups =
-        JSON.parse(localStorage.getItem("volunteerSignups")) || [];
-
-      const updatedSignups = existingSignups.filter((signup) => {
-        return signup.opportunityTitle !== opportunityToDelete.title;
-      });
-
-      localStorage.setItem("volunteerSignups", JSON.stringify(updatedSignups));
-    }
-
     setMessage("Opportunity deleted.");
   }
 
@@ -299,9 +349,13 @@ export default function AddOpportunityPage() {
             <option value="Hospital / Healthcare">Hospital / Healthcare</option>
             <option value="Senior Support">Senior Support</option>
             <option value="School">School</option>
-            <option value="Special Needs / Sports">Special Needs / Sports</option>
+            <option value="Special Needs / Sports">
+              Special Needs / Sports
+            </option>
             <option value="Civic / Government">Civic / Government</option>
-            <option value="Leadership / Recreation">Leadership / Recreation</option>
+            <option value="Leadership / Recreation">
+              Leadership / Recreation
+            </option>
           </select>
 
           <div style={formButtonRowStyle}>
@@ -378,7 +432,6 @@ export default function AddOpportunityPage() {
 }
 
 const pageStyle = {
-  fontFamily: "Arial, sans-serif",
   backgroundColor: "#f9fafb",
   fontFamily: "Roboto, Segoe UI, Arial",
   minHeight: "100vh",
@@ -388,7 +441,7 @@ const headerStyle = {
   padding: "70px 40px",
   fontFamily: "Roboto, Segoe UI, Arial",
   textAlign: "center",
-   backgroundColor: "#c7ebfa",
+  backgroundColor: "#c7ebfa",
 };
 
 const titleStyle = {
@@ -410,7 +463,6 @@ const subtitleStyle = {
 const userInfoStyle = {
   marginTop: "16px",
   color: "#000000",
-  fontFamily: "Roboto, Segoe UI, Arial",
   fontWeight: 700,
   fontFamily: "Roboto, Segoe UI, Arial",
 };
@@ -429,7 +481,6 @@ const formCardStyle = {
   borderRadius: "16px",
   border: "1px solid #d1d5db",
   boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
-  fontFamily: "Roboto, Segoe UI, Arial",
   fontFamily: "Roboto, Segoe UI, Arial",
 };
 
@@ -521,7 +572,7 @@ const emptyTextStyle = {
   textAlign: "center",
   color: "#6b7280",
   fontSize: "17px",
-    fontFamily: "Roboto, Segoe UI, Arial",
+  fontFamily: "Roboto, Segoe UI, Arial",
 };
 
 const opportunityGridStyle = {

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function TeacherClassPage() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [users, setUsers] = useState([]);
   const [roster, setRoster] = useState([]);
   const [studentUsernameToAdd, setStudentUsernameToAdd] = useState("");
   const [selectedStudentUsername, setSelectedStudentUsername] = useState("");
@@ -13,45 +13,103 @@ export default function TeacherClassPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+    async function loadTeacherClassData() {
+      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
-    if (!savedUser) {
-      window.location.href = "/login";
-      return;
+      if (!savedUser) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (!savedUser.role || savedUser.role.toLowerCase() !== "teacher") {
+        alert("Only teachers can manage a class.");
+        window.location.href = "/student/profile";
+        return;
+      }
+
+      setCurrentUser(savedUser);
+
+      const { data: rosterData, error: rosterError } = await supabase
+        .from("class_rosters")
+        .select("*")
+        .eq("teacher_username", savedUser.username)
+        .order("added_at", { ascending: true });
+
+      if (rosterError) {
+        console.error("Error loading class roster:", rosterError);
+        setMessage("Could not load class roster.");
+      } else {
+        const formattedRoster = rosterData.map((member) => ({
+          username: member.student_username,
+          displayName: member.student_name,
+          className: member.class_name,
+          addedAt: member.added_at
+            ? new Date(member.added_at).toLocaleString()
+            : "",
+        }));
+
+        setRoster(formattedRoster);
+      }
+
+      const { data: hoursData, error: hoursError } = await supabase
+        .from("volunteer_hours")
+        .select("*");
+
+      if (hoursError) {
+        console.error("Error loading volunteer hours:", hoursError);
+      } else {
+        const formattedHours = hoursData.map((entry) => ({
+          id: entry.id,
+          studentUsername: entry.student_username,
+          studentName: entry.student_name,
+          className: entry.class_name,
+          activityName: entry.event_name,
+          organization: entry.organization,
+          organizationContact: entry.organization_contact,
+          category: entry.category,
+          date: entry.event_date,
+          hours: entry.hours,
+          notes: entry.notes,
+          attachmentName: entry.attachment_name,
+          status: entry.status,
+        }));
+
+        setVolunteerHours(formattedHours);
+      }
+
+      const { data: signupData, error: signupError } = await supabase
+        .from("signups")
+        .select("*");
+
+      if (signupError) {
+        console.error("Error loading signups:", signupError);
+      } else {
+        const formattedSignups = signupData.map((signup) => ({
+          id: signup.id,
+          studentUsername: signup.student_username,
+          studentName: signup.student_name,
+          className: signup.class_name,
+          opportunityId: signup.opportunity_id,
+          opportunityTitle: signup.opportunity_title,
+          opportunityLocation: signup.opportunity_location,
+          opportunityHours: signup.opportunity_hours,
+          teacherName: signup.teacher_name,
+          teacherUsername: signup.teacher_username,
+          status: signup.status,
+          source: signup.source,
+          teacherSigned: signup.teacher_signed,
+          teacherSignedBy: signup.teacher_signed_by,
+          teacherSignedAt: signup.teacher_signed_at,
+        }));
+
+        setSignups(formattedSignups);
+      }
     }
 
-    if (!savedUser.role || savedUser.role.toLowerCase() !== "teacher") {
-      alert("Only teachers can manage a class.");
-      window.location.href = "/student/profile";
-      return;
-    }
-
-    setCurrentUser(savedUser);
-
-    const storedUsers = JSON.parse(localStorage.getItem("users")) || [];
-    const storedHours = JSON.parse(localStorage.getItem("volunteerHours")) || [];
-    const storedSignups =
-      JSON.parse(localStorage.getItem("volunteerSignups")) || [];
-
-    const allRosters = JSON.parse(localStorage.getItem("classRosters")) || {};
-    const teacherRoster = allRosters[savedUser.username] || [];
-
-    setUsers(storedUsers);
-    setVolunteerHours(storedHours);
-    setSignups(storedSignups);
-    setRoster(teacherRoster);
+    loadTeacherClassData();
   }, []);
 
-  function saveRoster(updatedRoster) {
-    const allRosters = JSON.parse(localStorage.getItem("classRosters")) || {};
-
-    allRosters[currentUser.username] = updatedRoster;
-
-    localStorage.setItem("classRosters", JSON.stringify(allRosters));
-    setRoster(updatedRoster);
-  }
-
-  function addStudentToClass() {
+  async function addStudentToClass() {
     setMessage("");
 
     const cleanedUsername = studentUsernameToAdd.trim();
@@ -61,26 +119,8 @@ export default function TeacherClassPage() {
       return;
     }
 
-    const latestUsers = JSON.parse(localStorage.getItem("users")) || [];
-
-    const student = latestUsers.find((user) => {
-      return (
-        user.username &&
-        user.username.toLowerCase() === cleanedUsername.toLowerCase() &&
-        user.role &&
-        user.role.toLowerCase() === "student"
-      );
-    });
-
-    if (!student) {
-      setMessage(
-        "No student found with that username. Make sure the student account exists first."
-      );
-      return;
-    }
-
     const alreadyInClass = roster.some((member) => {
-      return member.username === student.username;
+      return member.username.toLowerCase() === cleanedUsername.toLowerCase();
     });
 
     if (alreadyInClass) {
@@ -88,56 +128,69 @@ export default function TeacherClassPage() {
       return;
     }
 
+    const studentFromHours = volunteerHours.find((entry) => {
+      return (
+        entry.studentUsername &&
+        entry.studentUsername.toLowerCase() === cleanedUsername.toLowerCase()
+      );
+    });
+
+    const studentFromSignups = signups.find((signup) => {
+      return (
+        signup.studentUsername &&
+        signup.studentUsername.toLowerCase() === cleanedUsername.toLowerCase()
+      );
+    });
+
+    const studentName =
+      studentFromHours?.studentName ||
+      studentFromSignups?.studentName ||
+      cleanedUsername;
+
     const teacherClassName =
       currentUser.className && currentUser.className.trim()
         ? currentUser.className
         : `${currentUser.displayName}'s Class`;
 
-    const newMember = {
-      username: student.username,
-      displayName: student.displayName,
-      className: teacherClassName,
-      addedAt: new Date().toLocaleString(),
+    const newRosterRow = {
+      teacher_username: currentUser.username,
+      teacher_name: currentUser.displayName,
+      class_name: teacherClassName,
+      student_username: cleanedUsername,
+      student_name: studentName,
     };
 
-    const updatedRoster = [...roster, newMember];
+    const { data, error } = await supabase
+      .from("class_rosters")
+      .insert([newRosterRow])
+      .select()
+      .single();
 
-    const updatedUsers = latestUsers.map((user) => {
-      if (user.username === student.username) {
-        return {
-          ...user,
-          className: teacherClassName,
-        };
+    if (error) {
+      console.error("Error adding student to class:", error);
+
+      if (error.code === "23505") {
+        setMessage("That student is already in your class.");
+      } else {
+        setMessage("Could not add student to class.");
       }
 
-      return user;
-    });
-
-    localStorage.setItem("users", JSON.stringify(updatedUsers));
-    setUsers(updatedUsers);
-
-    const loggedInUser = JSON.parse(localStorage.getItem("currentUser"));
-
-    if (loggedInUser && loggedInUser.username === student.username) {
-      const updatedCurrentUser = {
-        ...loggedInUser,
-        className: teacherClassName,
-      };
-
-      localStorage.setItem("currentUser", JSON.stringify(updatedCurrentUser));
-      window.dispatchEvent(new Event("storage"));
-      window.dispatchEvent(new Event("authChanged"));
+      return;
     }
 
-    saveRoster(updatedRoster);
+    const newMember = {
+      username: data.student_username,
+      displayName: data.student_name,
+      className: data.class_name,
+      addedAt: data.added_at ? new Date(data.added_at).toLocaleString() : "",
+    };
 
+    setRoster((previousRoster) => [...previousRoster, newMember]);
     setStudentUsernameToAdd("");
-    setMessage(
-      `${student.displayName} was added to ${teacherClassName}. The student will see this class on their dashboard after they log in or refresh.`
-    );
+    setMessage(`${studentName} was added to ${teacherClassName}.`);
   }
 
-  function removeStudentFromClass(studentUsername) {
+  async function removeStudentFromClass(studentUsername) {
     const studentToRemove = roster.find((member) => {
       return member.username === studentUsername;
     });
@@ -154,11 +207,23 @@ export default function TeacherClassPage() {
       return;
     }
 
+    const { error } = await supabase
+      .from("class_rosters")
+      .delete()
+      .eq("teacher_username", currentUser.username)
+      .eq("student_username", studentUsername);
+
+    if (error) {
+      console.error("Error removing student:", error);
+      setMessage("Could not remove student from class.");
+      return;
+    }
+
     const updatedRoster = roster.filter((member) => {
       return member.username !== studentUsername;
     });
 
-    saveRoster(updatedRoster);
+    setRoster(updatedRoster);
 
     if (selectedStudentUsername === studentUsername) {
       setSelectedStudentUsername("");
@@ -168,7 +233,8 @@ export default function TeacherClassPage() {
   }
 
   function logout() {
-    window.location.href = "/logout";
+    localStorage.removeItem("currentUser");
+    window.location.href = "/login";
   }
 
   function formatStatus(status) {
@@ -316,14 +382,13 @@ export default function TeacherClassPage() {
 
           <p style={helperTextStyle}>
             Enter the student’s username exactly as they used it during signup.
-            This works for both demo student accounts and Google-created student
-            accounts.
+            This roster is now saved in Supabase.
           </p>
 
           <div style={inputRowStyle}>
             <input
               style={inputStyle}
-              placeholder="Example: miraya7"
+              placeholder="Example: teststudent"
               value={studentUsernameToAdd}
               onChange={(event) => setStudentUsernameToAdd(event.target.value)}
             />
@@ -399,7 +464,9 @@ export default function TeacherClassPage() {
 
               <div style={statsGridStyle}>
                 <div style={miniStatStyle}>
-                  <h3 style={miniStatNumberStyle}>{selectedStudentTotalHours}</h3>
+                  <h3 style={miniStatNumberStyle}>
+                    {selectedStudentTotalHours}
+                  </h3>
                   <p style={miniStatTextStyle}>Total Hours</p>
                 </div>
 

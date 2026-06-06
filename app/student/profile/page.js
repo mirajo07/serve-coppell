@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import StudentPdfExportButton from "../../components/StudentPdfExportButton";
 
 export default function StudentProfilePage() {
@@ -63,27 +64,85 @@ export default function StudentProfilePage() {
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   useEffect(() => {
-    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+    async function loadStudentData() {
+      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
-    if (!savedUser) {
-      window.location.href = "/login";
-      return;
+      if (!savedUser) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (savedUser.role.toLowerCase() !== "student") {
+        window.location.href = "/teacher";
+        return;
+      }
+
+      setCurrentUser(savedUser);
+      setSelectedAvatar(savedUser.avatar || "🙂");
+
+      const { data: hoursData, error: hoursError } = await supabase
+        .from("volunteer_hours")
+        .select("*")
+        .eq("student_username", savedUser.username)
+        .order("created_at", { ascending: false });
+
+      if (hoursError) {
+        console.error("Error loading student hours:", hoursError);
+        setMessage("Could not load volunteer hours.");
+      } else {
+        const formattedHours = hoursData.map((entry) => ({
+          id: entry.id,
+          studentUsername: entry.student_username,
+          studentName: entry.student_name,
+          className: entry.class_name,
+          activityName: entry.event_name,
+          organization: entry.organization,
+          organizationContact: entry.organization_contact,
+          category: entry.category,
+          date: entry.event_date,
+          hours: entry.hours,
+          notes: entry.notes,
+          signature: entry.signature,
+          attachmentName: entry.attachment_name,
+          status: entry.status,
+        }));
+
+        setVolunteerHours(formattedHours);
+      }
+
+      const { data: signupData, error: signupError } = await supabase
+        .from("signups")
+        .select("*")
+        .eq("student_username", savedUser.username)
+        .order("created_at", { ascending: false });
+
+      if (signupError) {
+        console.error("Error loading student signups:", signupError);
+        setMessage("Could not load teacher event signups.");
+      } else {
+        const formattedSignups = signupData.map((signup) => ({
+          id: signup.id,
+          studentUsername: signup.student_username,
+          studentName: signup.student_name,
+          className: signup.class_name,
+          opportunityId: signup.opportunity_id,
+          opportunityTitle: signup.opportunity_title,
+          opportunityLocation: signup.opportunity_location,
+          opportunityHours: signup.opportunity_hours,
+          teacherName: signup.teacher_name,
+          teacherUsername: signup.teacher_username,
+          status: signup.status,
+          source: signup.source,
+          teacherSigned: signup.teacher_signed,
+          teacherSignedBy: signup.teacher_signed_by,
+          teacherSignedAt: signup.teacher_signed_at,
+        }));
+
+        setSignups(formattedSignups);
+      }
     }
 
-    if (savedUser.role.toLowerCase() !== "student") {
-      window.location.href = "/teacher";
-      return;
-    }
-
-    setCurrentUser(savedUser);
-    setSelectedAvatar(savedUser.avatar || "🙂");
-
-    const storedHours = JSON.parse(localStorage.getItem("volunteerHours")) || [];
-    const storedSignups =
-      JSON.parse(localStorage.getItem("volunteerSignups")) || [];
-
-    setVolunteerHours(storedHours);
-    setSignups(storedSignups);
+    loadStudentData();
   }, []);
 
   function saveProfile() {
@@ -112,10 +171,9 @@ export default function StudentProfilePage() {
   }
 
   function logout() {
-  localStorage.removeItem("currentUser");
-  window.dispatchEvent(new Event("storage"));
-  window.location.href = "/login";
-}
+    localStorage.removeItem("currentUser");
+    window.location.href = "/login";
+  }
 
   function goToPreviousMonth() {
     if (calendarMonth === 0) {
@@ -164,7 +222,7 @@ export default function StudentProfilePage() {
     setNewEventDate("");
   }
 
-  function saveCalendarEvent() {
+  async function saveCalendarEvent() {
     if (
       !newActivityName ||
       !newOrganization ||
@@ -178,27 +236,52 @@ export default function StudentProfilePage() {
       return;
     }
 
-    const newEntry = {
-      id: Date.now(),
-      studentUsername: currentUser.username,
-      studentName: currentUser.displayName,
-      className: currentUser.className,
-      activityName: newActivityName,
+    const newEntryForSupabase = {
+      student_username: currentUser.username,
+      student_name: currentUser.displayName,
+      class_name: currentUser.className || "",
+      event_name: newActivityName,
       organization: newOrganization,
-      organizationContact: newOrganizationContact,
+      organization_contact: newOrganizationContact,
       category: newCategory,
-      date: newEventDate,
-      hours: newHours,
+      event_date: newEventDate,
+      hours: Number(newHours),
       notes: newNotes,
       signature: newSignature,
-      attachmentName: newAttachmentName,
-      status: "submitted",
+      attachment_name: newAttachmentName,
+      status: "approved",
     };
 
-    const updatedHours = [...volunteerHours, newEntry];
+    const { data, error } = await supabase
+      .from("volunteer_hours")
+      .insert([newEntryForSupabase])
+      .select()
+      .single();
 
-    setVolunteerHours(updatedHours);
-    localStorage.setItem("volunteerHours", JSON.stringify(updatedHours));
+    if (error) {
+      console.error("Error saving calendar event:", error);
+      setMessage("Calendar event could not be saved.");
+      return;
+    }
+
+    const newEntryForPage = {
+      id: data.id,
+      studentUsername: data.student_username,
+      studentName: data.student_name,
+      className: data.class_name,
+      activityName: data.event_name,
+      organization: data.organization,
+      organizationContact: data.organization_contact,
+      category: data.category,
+      date: data.event_date,
+      hours: data.hours,
+      notes: data.notes,
+      signature: data.signature,
+      attachmentName: data.attachment_name,
+      status: data.status,
+    };
+
+    setVolunteerHours((previousHours) => [newEntryForPage, ...previousHours]);
 
     closeAddEventPopup();
     setMessage("Calendar event saved successfully.");
@@ -210,14 +293,23 @@ export default function StudentProfilePage() {
     setShowConfirmPopup(true);
   }
 
-  function deleteCalendarEvent(entryId) {
+  async function deleteCalendarEvent(entryId) {
+    const { error } = await supabase
+      .from("volunteer_hours")
+      .delete()
+      .eq("id", entryId);
+
+    if (error) {
+      console.error("Error deleting calendar event:", error);
+      setMessage("Tracked event could not be deleted.");
+      return;
+    }
+
     const updatedHours = volunteerHours.filter((entry) => {
       return entry.id !== entryId;
     });
 
     setVolunteerHours(updatedHours);
-    localStorage.setItem("volunteerHours", JSON.stringify(updatedHours));
-
     setSelectedCalendarEvent(null);
     setMessage("Tracked event deleted.");
   }
@@ -525,7 +617,8 @@ export default function StudentProfilePage() {
             </h2>
 
             <p style={popupTextStyle}>
-              <strong>Organization:</strong> {selectedCalendarEvent.organization}
+              <strong>Organization:</strong>{" "}
+              {selectedCalendarEvent.organization}
             </p>
 
             <p style={popupTextStyle}>
@@ -646,9 +739,7 @@ export default function StudentProfilePage() {
             Logout
           </button>
 
-          <StudentPdfExportButton/>
-
-          
+          <StudentPdfExportButton />
 
           {message && <p style={messageStyle}>{message}</p>}
         </div>

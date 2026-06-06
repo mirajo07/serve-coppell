@@ -1,34 +1,80 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function TeacherSignupsPage() {
   const [signups, setSignups] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [currentFolder, setCurrentFolder] = useState("pending");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+    async function loadTeacherSignups() {
+      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
 
-    if (!savedUser) {
-      window.location.href = "/auth/logout";
-      return;
+      if (!savedUser) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (savedUser.role.toLowerCase() !== "teacher") {
+        window.location.href = "/student";
+        return;
+      }
+
+      setCurrentUser(savedUser);
+
+      const { data, error } = await supabase
+        .from("signups")
+        .select("*")
+        .eq("teacher_username", savedUser.username)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error loading teacher signups:", error);
+        alert("Could not load student signups from Supabase.");
+        setLoading(false);
+        return;
+      }
+
+      const formattedSignups = data.map((signup) => ({
+        id: signup.id,
+        studentUsername: signup.student_username,
+        studentName: signup.student_name,
+        className: signup.class_name,
+        opportunityId: signup.opportunity_id,
+        opportunityTitle: signup.opportunity_title,
+        opportunityLocation: signup.opportunity_location,
+        opportunityHours: signup.opportunity_hours,
+        teacherName: signup.teacher_name,
+        teacherUsername: signup.teacher_username,
+        status: signup.status,
+        source: signup.source,
+        teacherSigned: signup.teacher_signed,
+        teacherSignedBy: signup.teacher_signed_by,
+        teacherSignedAt: signup.teacher_signed_at,
+      }));
+
+      setSignups(formattedSignups);
+      setLoading(false);
     }
 
-    if (savedUser.role.toLowerCase() !== "teacher") {
-      window.location.href = "/student";
-      return;
-    }
-
-    setCurrentUser(savedUser);
-
-    const storedSignups =
-      JSON.parse(localStorage.getItem("volunteerSignups")) || [];
-
-    setSignups(storedSignups);
+    loadTeacherSignups();
   }, []);
 
-  function updateSignupStatus(signupId, newStatus) {
+  async function updateSignupStatus(signupId, newStatus) {
+    const { error } = await supabase
+      .from("signups")
+      .update({ status: newStatus })
+      .eq("id", signupId);
+
+    if (error) {
+      console.error("Error updating signup status:", error);
+      alert("Could not update signup status.");
+      return;
+    }
+
     const updatedSignups = signups.map((signup) => {
       if (signup.id === signupId) {
         return {
@@ -41,10 +87,27 @@ export default function TeacherSignupsPage() {
     });
 
     setSignups(updatedSignups);
-    localStorage.setItem("volunteerSignups", JSON.stringify(updatedSignups));
   }
 
-  function completeWithTeacherSignature(signupId) {
+  async function completeWithTeacherSignature(signupId) {
+    const signedAt = new Date().toLocaleString();
+
+    const { error } = await supabase
+      .from("signups")
+      .update({
+        status: "completed",
+        teacher_signed: true,
+        teacher_signed_by: currentUser.displayName,
+        teacher_signed_at: signedAt,
+      })
+      .eq("id", signupId);
+
+    if (error) {
+      console.error("Error completing teacher signature:", error);
+      alert("Could not complete teacher signature.");
+      return;
+    }
+
     const updatedSignups = signups.map((signup) => {
       if (signup.id === signupId) {
         return {
@@ -52,7 +115,7 @@ export default function TeacherSignupsPage() {
           status: "completed",
           teacherSigned: true,
           teacherSignedBy: currentUser.displayName,
-          teacherSignedAt: new Date().toLocaleString(),
+          teacherSignedAt: signedAt,
         };
       }
 
@@ -60,15 +123,19 @@ export default function TeacherSignupsPage() {
     });
 
     setSignups(updatedSignups);
-    localStorage.setItem("volunteerSignups", JSON.stringify(updatedSignups));
   }
 
-function logout() {
-  window.location.href = "/logout";
-}
+  function logout() {
+    localStorage.removeItem("currentUser");
+    window.location.href = "/login";
+  }
 
-  if (!currentUser) {
-    return null;
+  if (!currentUser || loading) {
+    return (
+      <main style={pageStyle}>
+        <p style={{ padding: "40px" }}>Loading teacher signups...</p>
+      </main>
+    );
   }
 
   const myTeacherSignups = signups.filter((signup) => {
@@ -109,13 +176,21 @@ function logout() {
   return (
     <main style={pageStyle}>
       <nav style={navStyle}>
-        <h2 style={logoStyle}>Volunteer Connect</h2>
+        <h2 style={logoStyle}>Vonnect</h2>
 
         <div style={navLinksStyle}>
-          <a href="/teacher" style={linkStyle}>Teacher Dashboard</a>
-          <a href="/teacher/add-opportunity" style={linkStyle}>Add Opportunity</a>
-          <a href="/opportunities" style={linkStyle}>Opportunities</a>
-          <a href="/leaderboard" style={linkStyle}>Leaderboard</a>
+          <a href="/teacher" style={linkStyle}>
+            Teacher Dashboard
+          </a>
+          <a href="/teacher/add-opportunity" style={linkStyle}>
+            Add Opportunity
+          </a>
+          <a href="/opportunities" style={linkStyle}>
+            Opportunities
+          </a>
+          <a href="/leaderboard" style={linkStyle}>
+            Leaderboard
+          </a>
 
           <button style={logoutButtonStyle} onClick={logout}>
             Logout
@@ -192,7 +267,7 @@ function logout() {
                 </p>
 
                 <p style={cardTextStyle}>
-                  <strong>Class:</strong> {signup.className}
+                  <strong>Class:</strong> {signup.className || "Not listed"}
                 </p>
 
                 <p style={cardTextStyle}>
@@ -254,7 +329,8 @@ function logout() {
                 {signup.status === "completed" && (
                   <div style={completedBoxStyle}>
                     <p>
-                      <strong>Teacher Signed:</strong> Yes
+                      <strong>Teacher Signed:</strong>{" "}
+                      {signup.teacherSigned ? "Yes" : "No"}
                     </p>
                     <p>
                       <strong>Signed By:</strong> {signup.teacherSignedBy}
@@ -286,7 +362,7 @@ function formatStatus(status) {
 }
 
 const pageStyle = {
-   fontFamily: "Roboto,Segoe UI, Arial",
+  fontFamily: "Roboto,Segoe UI, Arial",
   backgroundColor: "#f9fafb",
   minHeight: "100vh",
 };
@@ -331,7 +407,7 @@ const logoutButtonStyle = {
 const headerStyle = {
   padding: "70px 40px",
   textAlign: "center",
-   backgroundColor: "#c7ebfa",
+  backgroundColor: "#c7ebfa",
 };
 
 const titleStyle = {

@@ -1,31 +1,46 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function LeaderboardPage() {
   const [leaderboardStudents, setLeaderboardStudents] = useState([]);
   const [filterType, setFilterType] = useState("all-time");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     buildLeaderboard();
   }, [filterType, customStartDate, customEndDate]);
 
-  function buildLeaderboard() {
-    const storedManualHours =
-      JSON.parse(localStorage.getItem("volunteerHours")) || [];
+  async function buildLeaderboard() {
+    setLoading(true);
 
-    const storedSignups =
-      JSON.parse(localStorage.getItem("volunteerSignups")) || [];
+    const { data: manualHoursData, error: manualHoursError } = await supabase
+      .from("volunteer_hours")
+      .select("*");
 
-    const storedTeacherOpportunities =
-      JSON.parse(localStorage.getItem("teacherOpportunities")) || [];
+    const { data: signupsData, error: signupsError } = await supabase
+      .from("signups")
+      .select("*, opportunities(event_date)");
+
+    if (manualHoursError) {
+      console.error("Error loading manual hours:", manualHoursError);
+    }
+
+    if (signupsError) {
+      console.error("Error loading signup hours:", signupsError);
+    }
 
     const studentTotals = {};
 
     function addHoursToStudent(studentUsername, studentName, hours) {
       const key = studentUsername || studentName;
+
+      if (!key) {
+        return;
+      }
 
       if (!studentTotals[key]) {
         studentTotals[key] = {
@@ -40,47 +55,57 @@ export default function LeaderboardPage() {
       studentTotals[key].eventCount = studentTotals[key].eventCount + 1;
     }
 
-    storedManualHours.forEach((entry) => {
-      const entryDate = entry.date || "";
-
-      if (!isDateInSelectedRange(entryDate)) {
-        return;
-      }
-
-      const hours = Number(entry.hours) || 0;
-
-      addHoursToStudent(entry.studentUsername, entry.studentName, hours);
-    });
-
-    storedSignups.forEach((signup) => {
-      if (signup.source !== "teacher-opportunity-signup") {
-        return;
-      }
-
-      if (signup.status !== "completed") {
-        return;
-      }
-
-      const linkedOpportunity = storedTeacherOpportunities.find(
-        (opportunity) => {
-          return opportunity.title === signup.opportunityTitle;
+    if (manualHoursData) {
+      manualHoursData.forEach((entry) => {
+        if (entry.status && entry.status !== "approved") {
+          return;
         }
-      );
 
-      const eventDate =
-        linkedOpportunity?.eventDate ||
-        signup.eventDate ||
-        signup.teacherSignedAt ||
-        "";
+        const entryDate = entry.event_date || entry.created_at || "";
 
-      if (!isDateInSelectedRange(eventDate)) {
-        return;
-      }
+        if (!isDateInSelectedRange(entryDate)) {
+          return;
+        }
 
-      const hours = Number(signup.opportunityHours) || 0;
+        const hours = Number(entry.hours) || 0;
 
-      addHoursToStudent(signup.studentUsername, signup.studentName, hours);
-    });
+        addHoursToStudent(
+          entry.student_username,
+          entry.student_name,
+          hours
+        );
+      });
+    }
+
+    if (signupsData) {
+      signupsData.forEach((signup) => {
+        if (signup.source !== "teacher-opportunity-signup") {
+          return;
+        }
+
+        if (signup.status !== "completed") {
+          return;
+        }
+
+        const eventDate =
+          signup.opportunities?.event_date ||
+          signup.teacher_signed_at ||
+          signup.created_at ||
+          "";
+
+        if (!isDateInSelectedRange(eventDate)) {
+          return;
+        }
+
+        const hours = Number(signup.opportunity_hours) || 0;
+
+        addHoursToStudent(
+          signup.student_username,
+          signup.student_name,
+          hours
+        );
+      });
+    }
 
     const leaderboardArray = Object.keys(studentTotals).map((key) => {
       return studentTotals[key];
@@ -91,6 +116,7 @@ export default function LeaderboardPage() {
     });
 
     setLeaderboardStudents(leaderboardArray);
+    setLoading(false);
   }
 
   function isDateInSelectedRange(dateValue) {
@@ -275,7 +301,9 @@ export default function LeaderboardPage() {
             <span>Hours</span>
           </div>
 
-          {leaderboardStudents.length === 0 ? (
+          {loading ? (
+            <p style={emptyTextStyle}>Loading leaderboard...</p>
+          ) : leaderboardStudents.length === 0 ? (
             <p style={emptyTextStyle}>
               No hours found for this selected time period.
             </p>
