@@ -11,24 +11,27 @@ export default function TeacherSignupsPage() {
 
   useEffect(() => {
     async function loadTeacherSignups() {
-      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+      const authenticatedUser = await getAuthenticatedAppUser();
 
-      if (!savedUser) {
+      if (!authenticatedUser) {
         window.location.href = "/login";
         return;
       }
 
-      if (savedUser.role.toLowerCase() !== "teacher") {
-        window.location.href = "/student";
+      if (
+        !authenticatedUser.role ||
+        authenticatedUser.role.toLowerCase() !== "teacher"
+      ) {
+        window.location.href = "/student/profile";
         return;
       }
 
-      setCurrentUser(savedUser);
+      setCurrentUser(authenticatedUser);
 
       const { data, error } = await supabase
         .from("signups")
         .select("*")
-        .eq("teacher_username", savedUser.username)
+        .eq("teacher_username", authenticatedUser.username)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -62,6 +65,64 @@ export default function TeacherSignupsPage() {
 
     loadTeacherSignups();
   }, []);
+
+  async function getAuthenticatedAppUser() {
+    try {
+      const response = await fetch("/auth/profile", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const auth0User = await response.json();
+
+      if (!auth0User || !auth0User.email) {
+        return null;
+      }
+
+      const email = auth0User.email.toLowerCase().trim();
+
+      let role = "";
+      let className = "";
+
+      if (email.endsWith("@g.coppellisd.com")) {
+        role = "student";
+        className = "Not assigned yet";
+      } else if (email.endsWith("@coppellisd.com")) {
+        role = "teacher";
+        className = "Teacher Class";
+      } else {
+        window.location.replace("/auth/logout?returnTo=/unauthorized");
+        return null;
+      }
+
+      const usernameFromEmail = email
+        .split("@")[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+      const displayName =
+        auth0User.name ||
+        auth0User.nickname ||
+        auth0User.given_name ||
+        usernameFromEmail;
+
+      return {
+        displayName,
+        username: usernameFromEmail,
+        email,
+        className,
+        role,
+        avatar: "🙂",
+        authProvider: "google",
+      };
+    } catch (error) {
+      console.error("Error loading authenticated user:", error);
+      return null;
+    }
+  }
 
   async function updateSignupStatus(signupId, newStatus) {
     const { error } = await supabase
@@ -126,8 +187,7 @@ export default function TeacherSignupsPage() {
   }
 
   function logout() {
-    localStorage.removeItem("currentUser");
-    window.location.href = "/login";
+    window.location.href = "/logout";
   }
 
   if (!currentUser || loading) {
@@ -175,39 +235,21 @@ export default function TeacherSignupsPage() {
 
   return (
     <main style={pageStyle}>
-      <nav style={navStyle}>
-        <h2 style={logoStyle}>Vonnect</h2>
-
-        <div style={navLinksStyle}>
-          <a href="/teacher" style={linkStyle}>
-            Teacher Dashboard
-          </a>
-          <a href="/teacher/add-opportunity" style={linkStyle}>
-            Add Opportunity
-          </a>
-          <a href="/opportunities" style={linkStyle}>
-            Opportunities
-          </a>
-          <a href="/leaderboard" style={linkStyle}>
-            Leaderboard
-          </a>
-
-          <button style={logoutButtonStyle} onClick={logout}>
-            Logout
-          </button>
-        </div>
-      </nav>
-
       <section style={headerStyle}>
         <h1 style={titleStyle}>Review Student Signups</h1>
+
         <p style={subtitleStyle}>
           Approving a student only allows them to volunteer. Hours count only
           after you give the final teacher signature.
         </p>
 
         <p style={userInfoStyle}>
-          Teacher: {currentUser.displayName} | Class: {currentUser.className}
+          Teacher: {currentUser.displayName} | Username: {currentUser.username}
         </p>
+
+        <button style={logoutButtonStyle} onClick={logout}>
+          Logout
+        </button>
       </section>
 
       <section style={folderSectionStyle}>
@@ -332,12 +374,17 @@ export default function TeacherSignupsPage() {
                       <strong>Teacher Signed:</strong>{" "}
                       {signup.teacherSigned ? "Yes" : "No"}
                     </p>
+
                     <p>
-                      <strong>Signed By:</strong> {signup.teacherSignedBy}
+                      <strong>Signed By:</strong>{" "}
+                      {signup.teacherSignedBy || "Not listed"}
                     </p>
+
                     <p>
-                      <strong>Signed At:</strong> {signup.teacherSignedAt}
+                      <strong>Signed At:</strong>{" "}
+                      {signup.teacherSignedAt || "Not listed"}
                     </p>
+
                     <p>
                       <strong>Hours Counted:</strong> Yes
                     </p>
@@ -367,43 +414,6 @@ const pageStyle = {
   minHeight: "100vh",
 };
 
-const navStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "20px 40px",
-  backgroundColor: "white",
-  borderBottom: "1px solid #e5e7eb",
-};
-
-const logoStyle = {
-  margin: 0,
-  color: "#2563eb",
-};
-
-const navLinksStyle = {
-  display: "flex",
-  gap: "18px",
-  alignItems: "center",
-};
-
-const linkStyle = {
-  color: "#374151",
-  fontSize: "16px",
-  cursor: "pointer",
-  textDecoration: "none",
-};
-
-const logoutButtonStyle = {
-  padding: "8px 14px",
-  backgroundColor: "#b91c1c",
-  color: "white",
-  border: "none",
-  borderRadius: "8px",
-  cursor: "pointer",
-  fontWeight: 700,
-};
-
 const headerStyle = {
   padding: "70px 40px",
   textAlign: "center",
@@ -427,6 +437,17 @@ const subtitleStyle = {
 const userInfoStyle = {
   marginTop: "16px",
   color: "#000000",
+  fontWeight: 700,
+};
+
+const logoutButtonStyle = {
+  marginTop: "22px",
+  padding: "10px 16px",
+  backgroundColor: "#b91c1c",
+  color: "white",
+  border: "none",
+  borderRadius: "8px",
+  cursor: "pointer",
   fontWeight: 700,
 };
 

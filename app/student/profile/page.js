@@ -26,6 +26,7 @@ export default function StudentProfilePage() {
   const [newNotes, setNewNotes] = useState("");
   const [newSignature, setNewSignature] = useState("");
   const [newAttachmentName, setNewAttachmentName] = useState("");
+  const [newAttachmentFile, setNewAttachmentFile] = useState(null);
 
   const [showConfirmPopup, setShowConfirmPopup] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState("");
@@ -65,25 +66,25 @@ export default function StudentProfilePage() {
 
   useEffect(() => {
     async function loadStudentData() {
-      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+      const authenticatedUser = await getAuthenticatedAppUser();
 
-      if (!savedUser) {
+      if (!authenticatedUser) {
         window.location.href = "/login";
         return;
       }
 
-      if (savedUser.role.toLowerCase() !== "student") {
+      if (authenticatedUser.role.toLowerCase() !== "student") {
         window.location.href = "/teacher";
         return;
       }
 
-      setCurrentUser(savedUser);
-      setSelectedAvatar(savedUser.avatar || "🙂");
+      setCurrentUser(authenticatedUser);
+      setSelectedAvatar(authenticatedUser.avatar || "🙂");
 
       const { data: hoursData, error: hoursError } = await supabase
         .from("volunteer_hours")
         .select("*")
-        .eq("student_username", savedUser.username)
+        .eq("student_username", authenticatedUser.username)
         .order("created_at", { ascending: false });
 
       if (hoursError) {
@@ -104,6 +105,7 @@ export default function StudentProfilePage() {
           notes: entry.notes,
           signature: entry.signature,
           attachmentName: entry.attachment_name,
+          attachmentUrl: entry.attachment_url,
           status: entry.status,
         }));
 
@@ -113,7 +115,7 @@ export default function StudentProfilePage() {
       const { data: signupData, error: signupError } = await supabase
         .from("signups")
         .select("*")
-        .eq("student_username", savedUser.username)
+        .eq("student_username", authenticatedUser.username)
         .order("created_at", { ascending: false });
 
       if (signupError) {
@@ -145,34 +147,70 @@ export default function StudentProfilePage() {
     loadStudentData();
   }, []);
 
-  function saveProfile() {
-    const updatedUser = {
-      ...currentUser,
-      avatar: selectedAvatar,
-    };
+  async function getAuthenticatedAppUser() {
+    try {
+      const response = await fetch("/auth/profile", {
+        cache: "no-store",
+      });
 
-    const users = JSON.parse(localStorage.getItem("users")) || [];
-
-    const updatedUsers = users.map((user) => {
-      if (user.username === currentUser.username) {
-        return updatedUser;
+      if (!response.ok) {
+        return null;
       }
 
-      return user;
-    });
+      const auth0User = await response.json();
 
-    localStorage.setItem("users", JSON.stringify(updatedUsers));
-    localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+      if (!auth0User || !auth0User.email) {
+        return null;
+      }
 
-    setCurrentUser(updatedUser);
-    setMessage("Profile saved successfully.");
+      const email = auth0User.email.toLowerCase().trim();
 
-    window.dispatchEvent(new Event("storage"));
+      let role = "";
+      let className = "";
+
+      if (email.endsWith("@g.coppellisd.com")) {
+        role = "student";
+        className = "Not assigned yet";
+      } else if (email.endsWith("@coppellisd.com")) {
+        role = "teacher";
+        className = "Teacher Class";
+      } else {
+        window.location.replace("/auth/logout?returnTo=/unauthorized");
+        return null;
+      }
+
+      const usernameFromEmail = email
+        .split("@")[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+      const displayName =
+        auth0User.name ||
+        auth0User.nickname ||
+        auth0User.given_name ||
+        usernameFromEmail;
+
+      return {
+        displayName,
+        username: usernameFromEmail,
+        email,
+        className,
+        role,
+        avatar: "🙂",
+        authProvider: "google",
+      };
+    } catch (error) {
+      console.error("Error loading authenticated user:", error);
+      return null;
+    }
+  }
+
+  function saveProfile() {
+    setMessage("Profile display options saved for this session.");
   }
 
   function logout() {
-    localStorage.removeItem("currentUser");
-    window.location.href = "/login";
+    window.location.href = "/logout";
   }
 
   function goToPreviousMonth() {
@@ -203,6 +241,7 @@ export default function StudentProfilePage() {
     setNewNotes("");
     setNewSignature("");
     setNewAttachmentName("");
+    setNewAttachmentFile(null);
   }
 
   function openAddEventForDay(day) {
@@ -222,6 +261,38 @@ export default function StudentProfilePage() {
     setNewEventDate("");
   }
 
+  async function uploadAttachment(file, studentUsername) {
+    if (!file) {
+      return {
+        fileName: "",
+        fileUrl: "",
+      };
+    }
+
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const filePath = `${studentUsername}/${Date.now()}-${safeFileName}`;
+
+    const { error } = await supabase.storage
+      .from("volunteer-attachments")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    const { data } = supabase.storage
+      .from("volunteer-attachments")
+      .getPublicUrl(filePath);
+
+    return {
+      fileName: file.name,
+      fileUrl: data.publicUrl,
+    };
+  }
+
   async function saveCalendarEvent() {
     if (
       !newActivityName ||
@@ -233,6 +304,19 @@ export default function StudentProfilePage() {
       setMessage(
         "Please fill out activity name, organization, organization contact info, hours, and signature."
       );
+      return;
+    }
+
+    let uploadedAttachment;
+
+    try {
+      uploadedAttachment = await uploadAttachment(
+        newAttachmentFile,
+        currentUser.username
+      );
+    } catch (uploadError) {
+      console.error("Error uploading attachment:", uploadError);
+      setMessage("Attachment could not be uploaded.");
       return;
     }
 
@@ -248,7 +332,8 @@ export default function StudentProfilePage() {
       hours: Number(newHours),
       notes: newNotes,
       signature: newSignature,
-      attachment_name: newAttachmentName,
+      attachment_name: uploadedAttachment.fileName,
+      attachment_url: uploadedAttachment.fileUrl,
       status: "approved",
     };
 
@@ -278,6 +363,7 @@ export default function StudentProfilePage() {
       notes: data.notes,
       signature: data.signature,
       attachmentName: data.attachment_name,
+      attachmentUrl: data.attachment_url,
       status: data.status,
     };
 
@@ -385,6 +471,10 @@ export default function StudentProfilePage() {
 
   const needsSignatureSignups = myTeacherSignups.filter((signup) => {
     return signup.status === "needs-signature";
+  });
+
+  const completedSignups = myTeacherSignups.filter((signup) => {
+    return signup.status === "completed";
   });
 
   const disapprovedSignups = myTeacherSignups.filter((signup) => {
@@ -581,7 +671,11 @@ export default function StudentProfilePage() {
               type="file"
               onChange={(event) => {
                 if (event.target.files.length > 0) {
+                  setNewAttachmentFile(event.target.files[0]);
                   setNewAttachmentName(event.target.files[0].name);
+                } else {
+                  setNewAttachmentFile(null);
+                  setNewAttachmentName("");
                 }
               }}
             />
@@ -639,7 +733,19 @@ export default function StudentProfilePage() {
             </p>
 
             <p style={popupTextStyle}>
-              <strong>Status:</strong> {selectedCalendarEvent.status}
+              <strong>Attachment:</strong>{" "}
+              {selectedCalendarEvent.attachmentUrl ? (
+                <a
+                  href={selectedCalendarEvent.attachmentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={attachmentLinkStyle}
+                >
+                  {selectedCalendarEvent.attachmentName || "Open Attachment"}
+                </a>
+              ) : (
+                "No attachment uploaded"
+              )}
             </p>
 
             <p style={popupTextStyle}>
@@ -650,13 +756,6 @@ export default function StudentProfilePage() {
             <p style={popupTextStyle}>
               <strong>Signature:</strong> {selectedCalendarEvent.signature}
             </p>
-
-            {selectedCalendarEvent.attachmentName && (
-              <p style={popupTextStyle}>
-                <strong>Attachment:</strong>{" "}
-                {selectedCalendarEvent.attachmentName}
-              </p>
-            )}
 
             <div style={confirmButtonRowStyle}>
               <button
@@ -759,7 +858,7 @@ export default function StudentProfilePage() {
             </div>
           </div>
 
-          <h3 style={subTitleStyle}>Signup Status</h3>
+          <h3 style={subTitleStyle}>Teacher Opportunity Status</h3>
 
           <div style={statusGridStyle}>
             <div style={statusBoxStyle}>
@@ -775,7 +874,7 @@ export default function StudentProfilePage() {
             </div>
 
             <div style={statusBoxStyle}>
-              <strong>Completed:</strong> {myCompletedTeacherEvents.length}
+              <strong>Completed:</strong> {completedSignups.length}
             </div>
 
             <div style={statusBoxStyle}>
@@ -855,7 +954,7 @@ export default function StudentProfilePage() {
 
       <section style={activitySectionStyle}>
         <div style={activityCardStyle}>
-          <h2 style={sectionTitleStyle}>My Recent Tracked Hours</h2>
+          <h2 style={sectionTitleStyle}>My Manual Hours</h2>
 
           {myManualHours.length === 0 ? (
             <p style={emptyTextStyle}>No manually tracked hours yet.</p>
@@ -884,7 +983,19 @@ export default function StudentProfilePage() {
                   </p>
 
                   <p>
-                    <strong>Status:</strong> {entry.status}
+                    <strong>Attachment:</strong>{" "}
+                    {entry.attachmentUrl ? (
+                      <a
+                        href={entry.attachmentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={attachmentLinkStyle}
+                      >
+                        {entry.attachmentName || "Open Attachment"}
+                      </a>
+                    ) : (
+                      "No attachment uploaded"
+                    )}
                   </p>
                 </div>
               ))}
@@ -893,7 +1004,29 @@ export default function StudentProfilePage() {
         </div>
 
         <div style={activityCardStyle}>
-          <h2 style={sectionTitleStyle}>My Teacher Event Signups</h2>
+          <h2 style={sectionTitleStyle}>My Teacher Opportunities</h2>
+
+          <div style={statusGridStyle}>
+            <div style={statusBoxStyle}>
+              <strong>Pending:</strong> {pendingSignups.length}
+            </div>
+
+            <div style={statusBoxStyle}>
+              <strong>Approved:</strong> {approvedSignups.length}
+            </div>
+
+            <div style={statusBoxStyle}>
+              <strong>Needs Signature:</strong> {needsSignatureSignups.length}
+            </div>
+
+            <div style={statusBoxStyle}>
+              <strong>Completed:</strong> {completedSignups.length}
+            </div>
+
+            <div style={statusBoxStyle}>
+              <strong>Disapproved:</strong> {disapprovedSignups.length}
+            </div>
+          </div>
 
           {myTeacherSignups.length === 0 ? (
             <p style={emptyTextStyle}>No teacher event signups yet.</p>
@@ -1423,4 +1556,10 @@ const textAreaStyle = {
 const attachmentTextStyle = {
   color: "#374151",
   marginTop: "10px",
+};
+
+const attachmentLinkStyle = {
+  color: "#2563eb",
+  fontWeight: 700,
+  textDecoration: "underline",
 };

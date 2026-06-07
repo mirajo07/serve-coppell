@@ -11,28 +11,36 @@ export default function TeacherClassPage() {
   const [volunteerHours, setVolunteerHours] = useState([]);
   const [signups, setSignups] = useState([]);
   const [message, setMessage] = useState("");
+  const [teacherClassName, setTeacherClassName] = useState("");
 
   useEffect(() => {
     async function loadTeacherClassData() {
-      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+      const authenticatedUser = await getAuthenticatedAppUser();
 
-      if (!savedUser) {
+      if (!authenticatedUser) {
         window.location.href = "/login";
         return;
       }
 
-      if (!savedUser.role || savedUser.role.toLowerCase() !== "teacher") {
+      if (!authenticatedUser.role || authenticatedUser.role.toLowerCase() !== "teacher") {
         alert("Only teachers can manage a class.");
         window.location.href = "/student/profile";
         return;
       }
 
-      setCurrentUser(savedUser);
+      setCurrentUser(authenticatedUser);
+
+      const defaultClassName =
+        authenticatedUser.className && authenticatedUser.className.trim()
+          ? authenticatedUser.className
+          : `${authenticatedUser.displayName}'s Class`;
+
+      setTeacherClassName(defaultClassName);
 
       const { data: rosterData, error: rosterError } = await supabase
         .from("class_rosters")
         .select("*")
-        .eq("teacher_username", savedUser.username)
+        .eq("teacher_username", authenticatedUser.username)
         .order("added_at", { ascending: true });
 
       if (rosterError) {
@@ -42,7 +50,7 @@ export default function TeacherClassPage() {
         const formattedRoster = rosterData.map((member) => ({
           username: member.student_username,
           displayName: member.student_name,
-          className: member.class_name,
+          className: member.class_name || defaultClassName,
           addedAt: member.added_at
             ? new Date(member.added_at).toLocaleString()
             : "",
@@ -71,6 +79,7 @@ export default function TeacherClassPage() {
           hours: entry.hours,
           notes: entry.notes,
           attachmentName: entry.attachment_name,
+          attachmentUrl: entry.attachment_url,
           status: entry.status,
         }));
 
@@ -108,6 +117,100 @@ export default function TeacherClassPage() {
 
     loadTeacherClassData();
   }, []);
+
+  async function getAuthenticatedAppUser() {
+    try {
+      const response = await fetch("/auth/profile", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const auth0User = await response.json();
+
+      if (!auth0User || !auth0User.email) {
+        return null;
+      }
+
+      const email = auth0User.email.toLowerCase().trim();
+
+      let role = "";
+      let className = "";
+
+      if (email.endsWith("@g.coppellisd.com")) {
+        role = "student";
+        className = "Not assigned yet";
+      } else if (email.endsWith("@coppellisd.com")) {
+        role = "teacher";
+        className = "Teacher Class";
+      } else {
+        window.location.replace("/auth/logout?returnTo=/unauthorized");
+        return null;
+      }
+
+      const usernameFromEmail = email
+        .split("@")[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+      const displayName =
+        auth0User.name ||
+        auth0User.nickname ||
+        auth0User.given_name ||
+        usernameFromEmail;
+
+      return {
+        displayName,
+        username: usernameFromEmail,
+        email,
+        className,
+        role,
+        avatar: "🙂",
+        authProvider: "google",
+      };
+    } catch (error) {
+      console.error("Error loading authenticated user:", error);
+      return null;
+    }
+  }
+
+  async function saveTeacherClassName() {
+    const cleanedClassName = teacherClassName.trim();
+
+    if (!cleanedClassName) {
+      setMessage("Please enter a class name.");
+      return;
+    }
+
+    const updatedUser = {
+      ...currentUser,
+      className: cleanedClassName,
+    };
+
+    setCurrentUser(updatedUser);
+
+    const { error } = await supabase
+      .from("class_rosters")
+      .update({ class_name: cleanedClassName })
+      .eq("teacher_username", currentUser.username);
+
+    if (error) {
+      console.error("Error updating class name:", error);
+      setMessage("Could not update existing roster rows.");
+      return;
+    }
+
+    setRoster((previousRoster) =>
+      previousRoster.map((member) => ({
+        ...member,
+        className: cleanedClassName,
+      }))
+    );
+
+    setMessage("Class name saved successfully.");
+  }
 
   async function addStudentToClass() {
     setMessage("");
@@ -147,15 +250,17 @@ export default function TeacherClassPage() {
       studentFromSignups?.studentName ||
       cleanedUsername;
 
-    const teacherClassName =
-      currentUser.className && currentUser.className.trim()
+    const cleanedClassName =
+      teacherClassName && teacherClassName.trim()
+        ? teacherClassName.trim()
+        : currentUser.className && currentUser.className.trim()
         ? currentUser.className
         : `${currentUser.displayName}'s Class`;
 
     const newRosterRow = {
       teacher_username: currentUser.username,
       teacher_name: currentUser.displayName,
-      class_name: teacherClassName,
+      class_name: cleanedClassName,
       student_username: cleanedUsername,
       student_name: studentName,
     };
@@ -178,6 +283,13 @@ export default function TeacherClassPage() {
       return;
     }
 
+    const updatedUser = {
+      ...currentUser,
+      className: cleanedClassName,
+    };
+
+    setCurrentUser(updatedUser);
+
     const newMember = {
       username: data.student_username,
       displayName: data.student_name,
@@ -187,7 +299,7 @@ export default function TeacherClassPage() {
 
     setRoster((previousRoster) => [...previousRoster, newMember]);
     setStudentUsernameToAdd("");
-    setMessage(`${studentName} was added to ${teacherClassName}.`);
+    setMessage(`${studentName} was added to ${cleanedClassName}.`);
   }
 
   async function removeStudentFromClass(studentUsername) {
@@ -233,8 +345,7 @@ export default function TeacherClassPage() {
   }
 
   function logout() {
-    localStorage.removeItem("currentUser");
-    window.location.href = "/login";
+    window.location.href = "/logout";
   }
 
   function formatStatus(status) {
@@ -278,6 +389,7 @@ export default function TeacherClassPage() {
           status: entry.status || "submitted",
           notes: entry.notes || "No notes entered",
           attachmentName: entry.attachmentName || "",
+          attachmentUrl: entry.attachmentUrl || "",
         };
       }
     );
@@ -297,6 +409,7 @@ export default function TeacherClassPage() {
         status: signup.status,
         notes: `Location: ${signup.opportunityLocation || "No location listed"}`,
         attachmentName: "",
+        attachmentUrl: "",
       };
     });
 
@@ -345,13 +458,13 @@ export default function TeacherClassPage() {
         <h1 style={titleStyle}>Class Management</h1>
 
         <p style={subtitleStyle}>
-          Add students by username, remove class members, and view each
-          student’s total volunteer hours and activity records.
+          Create your class name, add students by username, and view each
+          student's volunteer activity.
         </p>
 
         <p style={userInfoStyle}>
           Teacher: {currentUser.displayName} | Class:{" "}
-          {currentUser.className || `${currentUser.displayName}'s Class`}
+          {currentUser.className || teacherClassName}
         </p>
 
         <button style={logoutButtonStyle} onClick={logout}>
@@ -378,17 +491,38 @@ export default function TeacherClassPage() {
 
       <section style={addStudentSectionStyle}>
         <div style={addStudentCardStyle}>
-          <h2 style={sectionTitleStyle}>Add Student to Class</h2>
+          <h2 style={sectionTitleStyle}>Class Name</h2>
 
           <p style={helperTextStyle}>
-            Enter the student’s username exactly as they used it during signup.
-            This roster is now saved in Supabase.
+            Create a class name. Students added to this class will see teacher
+            opportunities posted for this class.
           </p>
 
           <div style={inputRowStyle}>
             <input
               style={inputStyle}
-              placeholder="Example: teststudent"
+              placeholder="Example: NJHS Period 3"
+              value={teacherClassName}
+              onChange={(event) => setTeacherClassName(event.target.value)}
+            />
+
+            <button style={buttonStyle} onClick={saveTeacherClassName}>
+              Save Class Name
+            </button>
+          </div>
+
+          <h2 style={{ ...sectionTitleStyle, marginTop: "30px" }}>
+            Add Student to Class
+          </h2>
+
+          <p style={helperTextStyle}>
+            Enter the student's username. This roster is saved in Supabase.
+          </p>
+
+          <div style={inputRowStyle}>
+            <input
+              style={inputStyle}
+              placeholder="Example: student email username"
               value={studentUsernameToAdd}
               onChange={(event) => setStudentUsernameToAdd(event.target.value)}
             />
@@ -523,11 +657,21 @@ export default function TeacherClassPage() {
                         <strong>Notes:</strong> {record.notes}
                       </p>
 
-                      {record.attachmentName && (
-                        <p>
-                          <strong>Attachment:</strong> {record.attachmentName}
-                        </p>
-                      )}
+                      <p>
+                        <strong>Attachment:</strong>{" "}
+                        {record.attachmentUrl ? (
+                          <a
+                            href={record.attachmentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={attachmentLinkStyle}
+                          >
+                            {record.attachmentName || "Open Attachment"}
+                          </a>
+                        ) : (
+                          "No attachment uploaded"
+                        )}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -550,6 +694,12 @@ const headerStyle = {
   padding: "70px 40px",
   textAlign: "center",
   backgroundColor: "#ecfdf5",
+};
+
+const attachmentLinkStyle = {
+  color: "#2563eb",
+  fontWeight: 700,
+  textDecoration: "underline",
 };
 
 const titleStyle = {

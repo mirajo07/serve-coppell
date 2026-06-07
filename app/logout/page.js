@@ -4,19 +4,15 @@ import { useEffect } from "react";
 
 export default function LogoutPage() {
   useEffect(() => {
-    localStorage.removeItem("currentUser");
-    localStorage.setItem("manualLogout", "true");
-
-    window.dispatchEvent(new Event("storage"));
-    window.dispatchEvent(new Event("authChanged"));
-
     window.location.replace("/auth/logout?returnTo=/login");
   }, []);
 
   return (
     <main style={pageStyle}>
-      <h1>Signing you out...</h1>
-      <p>Please wait.</p>
+      <section style={cardStyle}>
+        <h1 style={titleStyle}>Signing you out...</h1>
+        <p style={textStyle}>Please wait while we securely log you out.</p>
+      </section>
     </main>
   );
 }
@@ -24,8 +20,31 @@ export default function LogoutPage() {
 const pageStyle = {
   minHeight: "100vh",
   display: "flex",
-  flexDirection: "column",
   justifyContent: "center",
   alignItems: "center",
+  backgroundColor: "#d2dbe4",
   fontFamily: "Roboto, Segoe UI, Arial",
+};
+
+const cardStyle = {
+  backgroundColor: "white",
+  border: "1px solid #d1d5db",
+  borderRadius: "18px",
+  padding: "36px",
+  maxWidth: "460px",
+  width: "90%",
+  textAlign: "center",
+  boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
+};
+
+const titleStyle = {
+  color: "#111827",
+  fontSize: "30px",
+  marginTop: 0,
+};
+
+const textStyle = {
+  color: "#374151",
+  fontSize: "16px",
+  lineHeight: "1.5",
 };

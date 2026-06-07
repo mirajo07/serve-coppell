@@ -12,8 +12,8 @@ export default function OpportunitiesPage() {
 
   useEffect(() => {
     async function loadData() {
-      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
-      setCurrentUser(savedUser);
+      const authenticatedUser = await getAuthenticatedAppUser();
+      setCurrentUser(authenticatedUser);
 
       const { data: signupData, error: signupError } = await supabase
         .from("signups")
@@ -40,10 +40,53 @@ export default function OpportunitiesPage() {
         setSignups(formattedSignups);
       }
 
-      const { data: opportunityData, error: opportunityError } = await supabase
+      let opportunityQuery = supabase
         .from("opportunities")
         .select("*")
         .order("event_date", { ascending: true });
+
+      if (
+        authenticatedUser &&
+        authenticatedUser.role &&
+        authenticatedUser.role.toLowerCase() === "student"
+      ) {
+        const { data: rosterData, error: rosterError } = await supabase
+          .from("class_rosters")
+          .select("class_name")
+          .eq("student_username", authenticatedUser.username);
+
+        if (rosterError) {
+          console.error("Error loading student class roster:", rosterError);
+          setTeacherOpportunities([]);
+          return;
+        }
+
+        const studentClassNames = rosterData
+          .map((row) => row.class_name)
+          .filter(Boolean);
+
+        if (studentClassNames.length === 0) {
+          setTeacherOpportunities([]);
+          return;
+        }
+
+        opportunityQuery = opportunityQuery.in("class_name", studentClassNames);
+      } else if (
+        authenticatedUser &&
+        authenticatedUser.role &&
+        authenticatedUser.role.toLowerCase() === "teacher"
+      ) {
+        opportunityQuery = opportunityQuery.eq(
+          "teacher_username",
+          authenticatedUser.username
+        );
+      } else {
+        setTeacherOpportunities([]);
+        return;
+      }
+
+      const { data: opportunityData, error: opportunityError } =
+        await opportunityQuery;
 
       if (opportunityError) {
         console.error(
@@ -67,6 +110,7 @@ export default function OpportunitiesPage() {
         maxSpots: item.max_spots || "",
         teacherName: item.teacher_name || "Unknown Teacher",
         teacherUsername: item.teacher_username || "unknown",
+        className: item.class_name || "",
       }));
 
       setTeacherOpportunities(formattedOpportunities);
@@ -74,6 +118,64 @@ export default function OpportunitiesPage() {
 
     loadData();
   }, []);
+
+  async function getAuthenticatedAppUser() {
+    try {
+      const response = await fetch("/auth/profile", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const auth0User = await response.json();
+
+      if (!auth0User || !auth0User.email) {
+        return null;
+      }
+
+      const email = auth0User.email.toLowerCase().trim();
+
+      let role = "";
+      let className = "";
+
+      if (email.endsWith("@g.coppellisd.com")) {
+        role = "student";
+        className = "Not assigned yet";
+      } else if (email.endsWith("@coppellisd.com")) {
+        role = "teacher";
+        className = "Teacher Class";
+      } else {
+        window.location.replace("/auth/logout?returnTo=/unauthorized");
+        return null;
+      }
+
+      const usernameFromEmail = email
+        .split("@")[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+      const displayName =
+        auth0User.name ||
+        auth0User.nickname ||
+        auth0User.given_name ||
+        usernameFromEmail;
+
+      return {
+        displayName,
+        username: usernameFromEmail,
+        email,
+        className,
+        role,
+        avatar: "🙂",
+        authProvider: "google",
+      };
+    } catch (error) {
+      console.error("Error loading authenticated user:", error);
+      return null;
+    }
+  }
 
   function openDirections(destination) {
     if (!userAddress) {
@@ -103,7 +205,7 @@ export default function OpportunitiesPage() {
     const alreadySignedUp = signups.some((signup) => {
       return (
         signup.studentUsername === currentUser.username &&
-        signup.opportunityTitle === opportunity.title &&
+        signup.opportunityId === opportunity.id &&
         signup.status !== "disapproved"
       );
     });
@@ -117,7 +219,7 @@ export default function OpportunitiesPage() {
 
     const activeSignupsForThisOpportunity = signups.filter((signup) => {
       return (
-        signup.opportunityTitle === opportunity.title &&
+        signup.opportunityId === opportunity.id &&
         signup.status !== "disapproved"
       );
     });
@@ -130,7 +232,7 @@ export default function OpportunitiesPage() {
     const newSignupForSupabase = {
       student_username: currentUser.username,
       student_name: currentUser.displayName,
-      class_name: currentUser.className || "",
+      class_name: opportunity.className || currentUser.className || "",
       opportunity_id: opportunity.id,
       opportunity_title: opportunity.title,
       opportunity_location: opportunity.location,
@@ -173,19 +275,19 @@ export default function OpportunitiesPage() {
     alert("Signup submitted for teacher approval!");
   }
 
-  function getApprovedStudents(opportunityTitle) {
+  function getApprovedStudents(opportunityId) {
     return signups.filter((signup) => {
       return (
-        signup.opportunityTitle === opportunityTitle &&
-        signup.status === "approved"
+        signup.opportunityId === opportunityId &&
+        ["approved", "needs-signature", "completed"].includes(signup.status)
       );
     });
   }
 
-  function getActiveSignupCount(opportunityTitle) {
+  function getActiveSignupCount(opportunityId) {
     return signups.filter((signup) => {
       return (
-        signup.opportunityTitle === opportunityTitle &&
+        signup.opportunityId === opportunityId &&
         signup.status !== "disapproved"
       );
     }).length;
@@ -669,28 +771,6 @@ export default function OpportunitiesPage() {
 
   return (
     <main style={pageStyle}>
-      <nav style={navStyle}>
-        <h2 style={logoStyle}>Vonnect</h2>
-
-        <div style={navLinksStyle}>
-          <a href="/" style={linkStyle}>
-            Home
-          </a>
-          <a href="/opportunities" style={linkStyle}>
-            Opportunities
-          </a>
-          <a href="/track-hours" style={linkStyle}>
-            Track Hours
-          </a>
-          <a href="/leaderboard" style={linkStyle}>
-            Leaderboard
-          </a>
-          <a href="/about" style={linkStyle}>
-            About
-          </a>
-        </div>
-      </nav>
-
       <section style={headerStyle}>
         <h1 style={titleStyle}>Volunteer Opportunities</h1>
         <p style={subtitleStyle}>
@@ -757,8 +837,8 @@ export default function OpportunitiesPage() {
         ) : (
           <div style={listStyle}>
             {filteredTeacherOpportunities.map((opportunity, index) => {
-              const approvedStudents = getApprovedStudents(opportunity.title);
-              const activeSignupCount = getActiveSignupCount(opportunity.title);
+              const approvedStudents = getApprovedStudents(opportunity.id);
+              const activeSignupCount = getActiveSignupCount(opportunity.id);
               const maxSpots = Number(opportunity.maxSpots);
               const isFull = maxSpots && activeSignupCount >= maxSpots;
 
@@ -900,33 +980,6 @@ const pageStyle = {
   fontFamily: "Roboto,Segoe UI, Arial",
   backgroundColor: "#f9fafb",
   minHeight: "100vh",
-};
-
-const navStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "20px 40px",
-  backgroundColor: "white",
-  borderBottom: "1px solid #e5e7eb",
-};
-
-const logoStyle = {
-  margin: 0,
-  color: "#2563eb",
-};
-
-const navLinksStyle = {
-  display: "flex",
-  gap: "24px",
-};
-
-const linkStyle = {
-  color: "#374151",
-  fontSize: "16px",
-  fontFamily: "Roboto,Segoe UI, Arial",
-  cursor: "pointer",
-  textDecoration: "none",
 };
 
 const headerStyle = {

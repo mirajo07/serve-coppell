@@ -1,113 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function LoginPage() {
-  const [mode, setMode] = useState("login");
-  const [role, setRole] = useState("student");
-  const [displayName, setDisplayName] = useState("");
-  const [username, setUsername] = useState("");
-  const [className, setClassName] = useState("");
-  const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    const manualLogout = localStorage.getItem("manualLogout");
-
-    if (manualLogout === "true") {
-      localStorage.removeItem("currentUser");
-      window.dispatchEvent(new Event("storage"));
-      window.dispatchEvent(new Event("authChanged"));
-    }
-  }, []);
-
-  function clearForm() {
-    setDisplayName("");
-    setUsername("");
-    setClassName("");
-    setPassword("");
-    setMessage("");
-  }
-
-  function createAccount() {
-    setMessage("");
-
-    if (!displayName || !username || !className || !password) {
-      setMessage("Please fill out name, username, class, and password.");
-      return;
-    }
-
-    const users = JSON.parse(localStorage.getItem("users")) || [];
-
-    const existingUser = users.find((user) => {
-      return user.username === username;
-    });
-
-    if (existingUser) {
-      setMessage("That username already exists. Please choose another one.");
-      return;
-    }
-
-    const newUser = {
-      displayName: displayName,
-      username: username,
-      className: className,
-      password: password,
-      role: role,
-      avatar: "🙂",
-      createdAt: new Date().toLocaleString(),
-    };
-
-    const updatedUsers = [...users, newUser];
-
-    localStorage.setItem("users", JSON.stringify(updatedUsers));
-    localStorage.setItem("currentUser", JSON.stringify(newUser));
-    localStorage.removeItem("manualLogout");
-
-    window.dispatchEvent(new Event("storage"));
-    window.dispatchEvent(new Event("authChanged"));
-
-    if (role === "teacher") {
-      window.location.href = "/teacher";
-    } else {
-      window.location.href = "/student/profile";
-    }
-  }
-
-  function login() {
-    setMessage("");
-
-    if (!username || !password) {
-      setMessage("Please enter username and password.");
-      return;
-    }
-
-    const users = JSON.parse(localStorage.getItem("users")) || [];
-
-    const foundUser = users.find((user) => {
-      return user.username === username && user.password === password;
-    });
-
-    if (!foundUser) {
-      setMessage("Invalid username or password.");
-      return;
-    }
-
-    localStorage.setItem("currentUser", JSON.stringify(foundUser));
-    localStorage.removeItem("manualLogout");
-
-    window.dispatchEvent(new Event("storage"));
-    window.dispatchEvent(new Event("authChanged"));
-
-    if (foundUser.role.toLowerCase() === "teacher") {
-      window.location.href = "/teacher";
-    } else {
-      window.location.href = "/student/profile";
-    }
-  }
-
   function signInWithGoogle() {
-    localStorage.removeItem("manualLogout");
+    setMessage("");
 
     window.location.href =
       "/auth/login?returnTo=%2Fauth-complete&connection=google-oauth2&prompt=login&max_age=0";
@@ -119,109 +18,29 @@ export default function LoginPage() {
         <h1 style={titleStyle}>Welcome to Vonnect</h1>
 
         <p style={subtitleStyle}>
-          Sign in to track volunteer hours, join opportunities, and manage your
-          service record.
+          Sign in with your Coppell ISD Google account to track volunteer hours,
+          join opportunities, and manage your service record.
         </p>
 
         <button style={googleButtonStyle} onClick={signInWithGoogle}>
           Sign in with Google
         </button>
 
-        <div style={dividerStyle}>
-          <span style={dividerLineStyle}></span>
-          <span style={dividerTextStyle}>or use demo login</span>
-          <span style={dividerLineStyle}></span>
-        </div>
-
-        <div style={tabRowStyle}>
-          <button
-            style={mode === "login" ? activeTabStyle : tabStyle}
-            onClick={() => {
-              setMode("login");
-              clearForm();
-            }}
-          >
-            Login
-          </button>
-
-          <button
-            style={mode === "register" ? activeTabStyle : tabStyle}
-            onClick={() => {
-              setMode("register");
-              clearForm();
-            }}
-          >
-            Create Account
-          </button>
-        </div>
-
-        {mode === "register" && (
-          <>
-            <label style={labelStyle}>I am a...</label>
-            <select
-              style={inputStyle}
-              value={role}
-              onChange={(event) => setRole(event.target.value)}
-            >
-              <option value="student">Student</option>
-              <option value="teacher">Teacher</option>
-            </select>
-
-            <label style={labelStyle}>Full Name</label>
-            <input
-              style={inputStyle}
-              placeholder="Example: Alex Smith"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-            />
-          </>
-        )}
-
-        <label style={labelStyle}>Username</label>
-        <input
-          style={inputStyle}
-          placeholder="Example: alex7"
-          value={username}
-          onChange={(event) => setUsername(event.target.value)}
-        />
-
-        {mode === "register" && (
-          <>
-            <label style={labelStyle}>Class / Group</label>
-            <input
-              style={inputStyle}
-              placeholder="Example: NJHS Period 2"
-              value={className}
-              onChange={(event) => setClassName(event.target.value)}
-            />
-          </>
-        )}
-
-        <label style={labelStyle}>Password</label>
-        <input
-          style={inputStyle}
-          type="password"
-          placeholder="Enter password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-        />
-
-        {mode === "login" ? (
-          <button style={mainButtonStyle} onClick={login}>
-            Login
-          </button>
-        ) : (
-          <button style={mainButtonStyle} onClick={createAccount}>
-            Create Account
-          </button>
-        )}
-
         {message && <p style={messageStyle}>{message}</p>}
 
-        <p style={helperTextStyle}>
-          Google sign-in uses Coppell ISD Google accounts. Demo login still uses
-          localStorage for now.
-        </p>
+        <div style={infoBoxStyle}>
+          <p style={infoTextStyle}>
+            <strong>Students:</strong> Use your @g.coppellisd.com account.
+          </p>
+
+          <p style={infoTextStyle}>
+            <strong>Teachers:</strong> Use your @coppellisd.com account.
+          </p>
+
+          <p style={helperTextStyle}>
+            Other email domains will not be allowed to access Vonnect.
+          </p>
+        </div>
       </section>
     </main>
   );
@@ -275,82 +94,19 @@ const googleButtonStyle = {
   boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
 };
 
-const dividerStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  margin: "24px 0",
-};
-
-const dividerLineStyle = {
-  flex: 1,
-  height: "1px",
-  backgroundColor: "#e5e7eb",
-};
-
-const dividerTextStyle = {
-  color: "#6b7280",
-  fontSize: "13px",
-  fontWeight: 700,
-};
-
-const tabRowStyle = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: "10px",
-  marginBottom: "18px",
-};
-
-const tabStyle = {
-  padding: "11px",
-  backgroundColor: "#f9fafb",
-  color: "#374151",
-  border: "1px solid #d1d5db",
-  borderRadius: "10px",
-  cursor: "pointer",
-  fontWeight: 700,
-};
-
-const activeTabStyle = {
-  padding: "11px",
-  backgroundColor: "#c7ebfa",
-  color: "#111827",
-  border: "2px solid #2563eb",
-  borderRadius: "10px",
-  cursor: "pointer",
-  fontWeight: 800,
-};
-
-const labelStyle = {
-  display: "block",
-  marginTop: "16px",
-  marginBottom: "7px",
-  color: "#111827",
-  fontWeight: 700,
-};
-
-const inputStyle = {
-  width: "100%",
-  padding: "12px",
-  border: "1px solid #9ca3af",
-  borderRadius: "9px",
-  fontSize: "16px",
-  color: "#111827",
-  backgroundColor: "white",
-  boxSizing: "border-box",
-};
-
-const mainButtonStyle = {
-  width: "100%",
-  padding: "14px",
-  backgroundColor: "#2563eb",
-  color: "white",
-  border: "none",
-  borderRadius: "10px",
-  cursor: "pointer",
-  fontWeight: 800,
-  fontSize: "16px",
+const infoBoxStyle = {
   marginTop: "24px",
+  backgroundColor: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  borderRadius: "12px",
+  padding: "16px",
+};
+
+const infoTextStyle = {
+  color: "#111827",
+  fontSize: "14px",
+  lineHeight: "1.5",
+  margin: "0 0 8px",
 };
 
 const messageStyle = {
@@ -364,5 +120,6 @@ const helperTextStyle = {
   color: "#6b7280",
   fontSize: "13px",
   textAlign: "center",
-  marginTop: "18px",
+  marginTop: "12px",
+  marginBottom: 0,
 };

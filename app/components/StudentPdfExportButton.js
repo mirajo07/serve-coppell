@@ -1,38 +1,133 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function StudentPdfExportButton() {
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
-    setCurrentUser(savedUser);
+    async function loadUser() {
+      const authenticatedUser = await getAuthenticatedAppUser();
+      setCurrentUser(authenticatedUser);
+    }
+
+    loadUser();
   }, []);
 
-  function exportToPdf() {
+  async function getAuthenticatedAppUser() {
+    try {
+      const response = await fetch("/auth/profile", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const auth0User = await response.json();
+
+      if (!auth0User || !auth0User.email) {
+        return null;
+      }
+
+      const email = auth0User.email.toLowerCase().trim();
+
+      let role = "";
+      let className = "";
+
+      if (email.endsWith("@g.coppellisd.com")) {
+        role = "student";
+        className = "Not assigned yet";
+      } else if (email.endsWith("@coppellisd.com")) {
+        role = "teacher";
+        className = "Teacher Class";
+      } else {
+        return null;
+      }
+
+      const usernameFromEmail = email
+        .split("@")[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+      const displayName =
+        auth0User.name ||
+        auth0User.nickname ||
+        auth0User.given_name ||
+        usernameFromEmail;
+
+      return {
+        displayName,
+        username: usernameFromEmail,
+        email,
+        className,
+        role,
+        avatar: "🙂",
+        authProvider: "google",
+      };
+    } catch (error) {
+      console.error("Error loading authenticated user:", error);
+      return null;
+    }
+  }
+
+  async function exportToPdf() {
     if (!currentUser) {
       alert("Please log in first.");
       return;
     }
 
-    const volunteerHours =
-      JSON.parse(localStorage.getItem("volunteerHours")) || [];
+    const { data: volunteerHoursData, error: volunteerHoursError } =
+      await supabase
+        .from("volunteer_hours")
+        .select("*")
+        .eq("student_username", currentUser.username)
+        .order("event_date", { ascending: false });
 
-    const volunteerSignups =
-      JSON.parse(localStorage.getItem("volunteerSignups")) || [];
+    if (volunteerHoursError) {
+      console.error("Error loading volunteer hours for PDF:", volunteerHoursError);
+      alert("Could not load volunteer hours for PDF.");
+      return;
+    }
 
-    const myManualHours = volunteerHours.filter((entry) => {
-      return entry.studentUsername === currentUser.username;
-    });
+    const { data: signupData, error: signupError } = await supabase
+      .from("signups")
+      .select("*")
+      .eq("student_username", currentUser.username)
+      .eq("source", "teacher-opportunity-signup")
+      .eq("status", "completed")
+      .order("created_at", { ascending: false });
 
-    const myTeacherEvents = volunteerSignups.filter((signup) => {
-      return (
-        signup.studentUsername === currentUser.username &&
-        signup.source === "teacher-opportunity-signup" &&
-        signup.status === "completed"
-      );
-    });
+    if (signupError) {
+      console.error("Error loading teacher events for PDF:", signupError);
+      alert("Could not load teacher events for PDF.");
+      return;
+    }
+
+    const myManualHours = volunteerHoursData.map((entry) => ({
+      id: entry.id,
+      activityName: entry.event_name,
+      organization: entry.organization,
+      category: entry.category,
+      date: entry.event_date,
+      hours: entry.hours,
+      organizationContact: entry.organization_contact,
+      signature: entry.signature,
+      notes: entry.notes,
+      attachmentName: entry.attachment_name,
+      attachmentUrl: entry.attachment_url,
+    }));
+
+    const myTeacherEvents = signupData.map((signup) => ({
+      id: signup.id,
+      opportunityTitle: signup.opportunity_title,
+      teacherName: signup.teacher_name,
+      opportunityLocation: signup.opportunity_location,
+      teacherSignedAt: signup.teacher_signed_at,
+      opportunityHours: signup.opportunity_hours,
+      status: signup.status,
+    }));
 
     const manualHourTotal = myManualHours.reduce((total, entry) => {
       return total + Number(entry.hours || 0);
@@ -43,7 +138,6 @@ export default function StudentPdfExportButton() {
     }, 0);
 
     const totalHours = manualHourTotal + teacherHourTotal;
-
     const totalActivities = myManualHours.length + myTeacherEvents.length;
 
     const manualRows = myManualHours
@@ -57,6 +151,13 @@ export default function StudentPdfExportButton() {
             <td>${entry.hours || 0}</td>
             <td>${entry.organizationContact || ""}</td>
             <td>${entry.signature || ""}</td>
+            <td>${
+              entry.attachmentUrl
+                ? `<a href="${entry.attachmentUrl}" target="_blank">${
+                    entry.attachmentName || "Open Attachment"
+                  }</a>`
+                : "No attachment"
+            }</td>
           </tr>
         `;
       })
@@ -144,6 +245,11 @@ export default function StudentPdfExportButton() {
               vertical-align: top;
             }
 
+            a {
+              color: #2563eb;
+              font-weight: 700;
+            }
+
             .muted {
               color: #6b7280;
               font-size: 13px;
@@ -173,6 +279,7 @@ export default function StudentPdfExportButton() {
           <p>
             <strong>Student:</strong> ${currentUser.displayName}<br />
             <strong>Username:</strong> ${currentUser.username}<br />
+            <strong>Email:</strong> ${currentUser.email}<br />
             <strong>Class:</strong> ${currentUser.className || "Not listed"}<br />
             <strong>Report Created:</strong> ${new Date().toLocaleString()}
           </p>
@@ -210,6 +317,7 @@ export default function StudentPdfExportButton() {
                       <th>Hours</th>
                       <th>Contact</th>
                       <th>Signature</th>
+                      <th>Attachment</th>
                     </tr>
                   </thead>
                   <tbody>

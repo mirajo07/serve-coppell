@@ -6,109 +6,38 @@ export default function AuthCompletePage() {
   useEffect(() => {
     async function finishLogin() {
       try {
-        localStorage.removeItem("manualLogout");
-
         const response = await fetch("/auth/profile", {
           cache: "no-store",
         });
 
         if (!response.ok) {
-          window.location.href = "/login";
+          window.location.replace("/login");
           return;
         }
 
         const auth0User = await response.json();
 
         if (!auth0User || !auth0User.email) {
-          window.location.href = "/login";
+          window.location.replace("/login");
           return;
         }
 
-        const email = auth0User.email.toLowerCase();
-
-        let role = "";
-        let className = "";
+        const email = auth0User.email.toLowerCase().trim();
 
         if (email.endsWith("@g.coppellisd.com")) {
-          role = "student";
-          className = "Not assigned yet";
-        } else if (email.endsWith("@coppellisd.com")) {
-          role = "teacher";
-          className = "Teacher Class";
-        } else {
-          localStorage.removeItem("currentUser");
-          localStorage.setItem("manualLogout", "true");
-
-          window.dispatchEvent(new Event("storage"));
-          window.dispatchEvent(new Event("authChanged"));
-
-          window.location.replace("/auth/logout?returnTo=/unauthorized");
+          window.location.replace("/student/profile");
           return;
         }
 
-        const users = JSON.parse(localStorage.getItem("users")) || [];
-
-        const usernameFromEmail = email
-          .split("@")[0]
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, "");
-
-        const existingUser = users.find((user) => {
-          return user.email === email || user.username === usernameFromEmail;
-        });
-
-        let appUser;
-
-        if (existingUser) {
-          appUser = {
-            ...existingUser,
-            role: role,
-            email: email,
-            className:
-              existingUser.className &&
-              existingUser.className !== "Google Login"
-                ? existingUser.className
-                : className,
-          };
-
-          const updatedUsers = users.map((user) => {
-            if (user.username === existingUser.username) {
-              return appUser;
-            }
-
-            return user;
-          });
-
-          localStorage.setItem("users", JSON.stringify(updatedUsers));
-        } else {
-          appUser = {
-            displayName: auth0User.name || usernameFromEmail,
-            username: usernameFromEmail,
-            email: email,
-            className: className,
-            password: "",
-            role: role,
-            avatar: "🙂",
-            authProvider: "google",
-            createdAt: new Date().toLocaleString(),
-          };
-
-          localStorage.setItem("users", JSON.stringify([...users, appUser]));
-        }
-
-        localStorage.setItem("currentUser", JSON.stringify(appUser));
-
-        window.dispatchEvent(new Event("storage"));
-        window.dispatchEvent(new Event("authChanged"));
-
-        if (role === "teacher") {
+        if (email.endsWith("@coppellisd.com")) {
           window.location.replace("/teacher");
-        } else {
-          window.location.replace("/student/profile");
+          return;
         }
+
+        window.location.replace("/auth/logout?returnTo=/unauthorized");
       } catch (error) {
-        console.log(error);
-        window.location.href = "/login";
+        console.error("Auth complete error:", error);
+        window.location.replace("/login");
       }
     }
 
@@ -117,8 +46,10 @@ export default function AuthCompletePage() {
 
   return (
     <main style={pageStyle}>
-      <h1>Signing you in...</h1>
-      <p>Please wait while we open your dashboard.</p>
+      <section style={cardStyle}>
+        <h1 style={titleStyle}>Signing you in...</h1>
+        <p style={textStyle}>Please wait while we open your Vonnect dashboard.</p>
+      </section>
     </main>
   );
 }
@@ -126,8 +57,31 @@ export default function AuthCompletePage() {
 const pageStyle = {
   minHeight: "100vh",
   display: "flex",
-  flexDirection: "column",
   justifyContent: "center",
   alignItems: "center",
+  backgroundColor: "#d2dbe4",
   fontFamily: "Roboto, Segoe UI, Arial",
+};
+
+const cardStyle = {
+  backgroundColor: "white",
+  border: "1px solid #d1d5db",
+  borderRadius: "18px",
+  padding: "36px",
+  maxWidth: "460px",
+  width: "90%",
+  textAlign: "center",
+  boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
+};
+
+const titleStyle = {
+  color: "#111827",
+  fontSize: "30px",
+  marginTop: 0,
+};
+
+const textStyle = {
+  color: "#374151",
+  fontSize: "16px",
+  lineHeight: "1.5",
 };

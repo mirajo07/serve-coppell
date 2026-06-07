@@ -6,19 +6,70 @@ export default function FloatingProfileButton() {
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    function loadUser() {
-      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
-      setCurrentUser(savedUser);
+    async function loadUser() {
+      const authenticatedUser = await getAuthenticatedAppUser();
+      setCurrentUser(authenticatedUser);
     }
 
     loadUser();
-
-    window.addEventListener("storage", loadUser);
-
-    return () => {
-      window.removeEventListener("storage", loadUser);
-    };
   }, []);
+
+  async function getAuthenticatedAppUser() {
+    try {
+      const response = await fetch("/auth/profile", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const auth0User = await response.json();
+
+      if (!auth0User || !auth0User.email) {
+        return null;
+      }
+
+      const email = auth0User.email.toLowerCase().trim();
+
+      let role = "";
+      let className = "";
+
+      if (email.endsWith("@g.coppellisd.com")) {
+        role = "student";
+        className = "Not assigned yet";
+      } else if (email.endsWith("@coppellisd.com")) {
+        role = "teacher";
+        className = "Teacher Class";
+      } else {
+        return null;
+      }
+
+      const usernameFromEmail = email
+        .split("@")[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+      const displayName =
+        auth0User.name ||
+        auth0User.nickname ||
+        auth0User.given_name ||
+        usernameFromEmail;
+
+      return {
+        displayName,
+        username: usernameFromEmail,
+        email,
+        className,
+        role,
+        avatar: "🙂",
+        authProvider: "google",
+      };
+    } catch (error) {
+      console.error("Error loading authenticated user:", error);
+      return null;
+    }
+  }
 
   if (!currentUser) {
     return null;
@@ -55,8 +106,7 @@ const floatingButtonStyle = {
   boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
   textDecoration: "none",
   fontWeight: 700,
-   fontFamily: "Roboto,Segoe UI, Arial",
-
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const avatarStyle = {
@@ -69,13 +119,11 @@ const avatarStyle = {
   justifyContent: "center",
   alignItems: "center",
   fontSize: "22px",
-   fontFamily: "Roboto,Segoe UI, Arial",
-
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const nameStyle = {
   fontSize: "14px",
   color: "#111827",
-   fontFamily: "Roboto,Segoe UI, Arial",
-  
+  fontFamily: "Roboto,Segoe UI, Arial",
 };

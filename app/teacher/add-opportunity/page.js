@@ -15,9 +15,11 @@ export default function AddOpportunityPage() {
   const [endTime, setEndTime] = useState("");
   const [category, setCategory] = useState("Community Service");
   const [maxSpots, setMaxSpots] = useState("");
+  const [targetClassName, setTargetClassName] = useState("");
+  const [teacherClassNames, setTeacherClassNames] = useState([]);
+
   const [message, setMessage] = useState("");
   const [showSavedPopup, setShowSavedPopup] = useState(false);
-
   const [teacherOpportunities, setTeacherOpportunities] = useState([]);
 
   const [showConfirmPopup, setShowConfirmPopup] = useState(false);
@@ -26,24 +28,49 @@ export default function AddOpportunityPage() {
 
   useEffect(() => {
     async function loadOpportunities() {
-      const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+      const authenticatedUser = await getAuthenticatedAppUser();
 
-      if (!savedUser) {
+      if (!authenticatedUser) {
         window.location.href = "/login";
         return;
       }
 
-      if (savedUser.role.toLowerCase() !== "teacher") {
-        window.location.href = "/student";
+      if (authenticatedUser.role.toLowerCase() !== "teacher") {
+        window.location.href = "/student/profile";
         return;
       }
 
-      setCurrentUser(savedUser);
+      setCurrentUser(authenticatedUser);
+
+      const { data: rosterData, error: rosterError } = await supabase
+        .from("class_rosters")
+        .select("class_name")
+        .eq("teacher_username", authenticatedUser.username);
+
+      if (rosterError) {
+        console.error("Error loading teacher classes:", rosterError);
+      } else {
+        const uniqueClassNames = [
+          ...new Set(
+            rosterData
+              .map((row) => row.class_name)
+              .filter((className) => className && className.trim())
+          ),
+        ];
+
+        setTeacherClassNames(uniqueClassNames);
+
+        if (uniqueClassNames.length > 0) {
+          setTargetClassName(uniqueClassNames[0]);
+        } else {
+          setTargetClassName(authenticatedUser.className || "Teacher Class");
+        }
+      }
 
       const { data, error } = await supabase
         .from("opportunities")
         .select("*")
-        .eq("teacher_username", savedUser.username)
+        .eq("teacher_username", authenticatedUser.username)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -77,6 +104,64 @@ export default function AddOpportunityPage() {
     loadOpportunities();
   }, []);
 
+  async function getAuthenticatedAppUser() {
+    try {
+      const response = await fetch("/auth/profile", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const auth0User = await response.json();
+
+      if (!auth0User || !auth0User.email) {
+        return null;
+      }
+
+      const email = auth0User.email.toLowerCase().trim();
+
+      let role = "";
+      let className = "";
+
+      if (email.endsWith("@g.coppellisd.com")) {
+        role = "student";
+        className = "Not assigned yet";
+      } else if (email.endsWith("@coppellisd.com")) {
+        role = "teacher";
+        className = "Teacher Class";
+      } else {
+        window.location.replace("/auth/logout?returnTo=/unauthorized");
+        return null;
+      }
+
+      const usernameFromEmail = email
+        .split("@")[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+
+      const displayName =
+        auth0User.name ||
+        auth0User.nickname ||
+        auth0User.given_name ||
+        usernameFromEmail;
+
+      return {
+        displayName,
+        username: usernameFromEmail,
+        email,
+        className,
+        role,
+        avatar: "🙂",
+        authProvider: "google",
+      };
+    } catch (error) {
+      console.error("Error loading authenticated user:", error);
+      return null;
+    }
+  }
+
   function clearForm() {
     setTitle("");
     setDescription("");
@@ -97,24 +182,32 @@ export default function AddOpportunityPage() {
   }
 
   async function saveOpportunity() {
+    setMessage("");
+
+    if (!currentUser) {
+      setMessage("You must be logged in as a teacher.");
+      return;
+    }
+
     if (
-      !title ||
-      !description ||
-      !location ||
+      !title.trim() ||
+      !description.trim() ||
+      !location.trim() ||
       !hours ||
       !eventDate ||
       !startTime ||
       !endTime ||
-      !maxSpots
+      !maxSpots ||
+      !targetClassName.trim()
     ) {
-      setMessage("Please fill out all required fields.");
+      setMessage("Please fill out all required fields, including class name.");
       return;
     }
 
     const newOpportunityForSupabase = {
-      title,
-      description,
-      location,
+      title: title.trim(),
+      description: description.trim(),
+      location: location.trim(),
       hours: Number(hours),
       event_date: eventDate,
       start_time: startTime,
@@ -123,7 +216,7 @@ export default function AddOpportunityPage() {
       max_spots: Number(maxSpots),
       teacher_name: currentUser.displayName,
       teacher_username: currentUser.username,
-      class_name: currentUser.className || "",
+      class_name: targetClassName.trim(),
     };
 
     const { data, error } = await supabase
@@ -177,6 +270,17 @@ export default function AddOpportunityPage() {
   }
 
   async function deleteOpportunity(opportunityId) {
+    const { error: signupDeleteError } = await supabase
+      .from("signups")
+      .delete()
+      .eq("opportunity_id", opportunityId);
+
+    if (signupDeleteError) {
+      console.error("Error deleting related signups:", signupDeleteError);
+      setMessage("Could not delete related student signups.");
+      return;
+    }
+
     const { error } = await supabase
       .from("opportunities")
       .delete()
@@ -258,16 +362,45 @@ export default function AddOpportunityPage() {
 
         <p style={subtitleStyle}>
           Logged in as {currentUser.displayName}. Opportunities you create will
-          show your teacher name.
+          show your teacher name and only appear to students in the selected
+          class.
         </p>
 
         <p style={userInfoStyle}>
-          Teacher: {currentUser.displayName} | Class: {currentUser.className}
+          Teacher: {currentUser.displayName} | Username: {currentUser.username}
         </p>
       </section>
 
       <section style={formSectionStyle}>
         <div style={formCardStyle}>
+          <label style={labelStyle}>Class for This Opportunity *</label>
+
+          {teacherClassNames.length > 0 ? (
+            <select
+              style={inputStyle}
+              value={targetClassName}
+              onChange={(event) => setTargetClassName(event.target.value)}
+            >
+              {teacherClassNames.map((className) => (
+                <option value={className} key={className}>
+                  {className}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              style={inputStyle}
+              placeholder="Example: NJHS Period 3"
+              value={targetClassName}
+              onChange={(event) => setTargetClassName(event.target.value)}
+            />
+          )}
+
+          <p style={helperTextStyle}>
+            Students must be in this class roster to see this teacher
+            opportunity.
+          </p>
+
           <label style={labelStyle}>Opportunity Title *</label>
           <input
             style={inputStyle}
@@ -376,12 +509,18 @@ export default function AddOpportunityPage() {
         <h2 style={sectionTitleStyle}>My Posted Opportunities</h2>
 
         {myOpportunities.length === 0 ? (
-          <p style={emptyTextStyle}>You have not posted any opportunities yet.</p>
+          <p style={emptyTextStyle}>
+            You have not posted any opportunities yet.
+          </p>
         ) : (
           <div style={opportunityGridStyle}>
             {myOpportunities.map((opportunity) => (
               <div style={opportunityCardStyle} key={opportunity.id}>
                 <h3 style={opportunityTitleStyle}>{opportunity.title}</h3>
+
+                <p>
+                  <strong>Class:</strong> {opportunity.className || "Not set"}
+                </p>
 
                 <p>
                   <strong>Description:</strong> {opportunity.description}
@@ -464,6 +603,13 @@ const userInfoStyle = {
   marginTop: "16px",
   color: "#000000",
   fontWeight: 700,
+  fontFamily: "Roboto, Segoe UI, Arial",
+};
+
+const helperTextStyle = {
+  color: "#374151",
+  fontSize: "14px",
+  marginTop: "8px",
   fontFamily: "Roboto, Segoe UI, Arial",
 };
 
