@@ -29,10 +29,10 @@ export default function AuthCompletePage() {
           return;
         }
 
-        if (email.endsWith("@coppellisd.com")) {
-          window.location.replace("/teacher");
-          return;
-        }
+        if (email.endsWith("@coppellisd.com") || email === "mjatx07@gmail.com" || email === "mjatx07@gmail.com") {
+  window.location.replace("/teacher");
+  return;
+}
 
         window.location.replace("/auth/logout?returnTo=/unauthorized");
       } catch (error) {

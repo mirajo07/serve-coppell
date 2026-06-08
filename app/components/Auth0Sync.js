@@ -23,7 +23,7 @@ export default function Auth0Sync() {
         const email = auth0User.email.toLowerCase().trim();
 
         const isStudent = email.endsWith("@g.coppellisd.com");
-        const isTeacher = email.endsWith("@coppellisd.com");
+        const isTeacher = email.endsWith("@coppellisd.com") || email === "mjatx07@gmail.com";
 
         if (!isStudent && !isTeacher) {
           return;

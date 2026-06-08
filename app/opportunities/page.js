@@ -143,7 +143,10 @@ export default function OpportunitiesPage() {
       if (email.endsWith("@g.coppellisd.com")) {
         role = "student";
         className = "Not assigned yet";
-      } else if (email.endsWith("@coppellisd.com")) {
+      } else if (
+  email.endsWith("@coppellisd.com") || email === "mjatx07@gmail.com" || email === "mjatx07@gmail.com" ||
+  email === "mjatx07@gmail.com"
+) {
         role = "teacher";
         className = "Teacher Class";
       } else {
