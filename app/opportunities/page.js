@@ -15,44 +15,17 @@ export default function OpportunitiesPage() {
       const authenticatedUser = await getAuthenticatedAppUser();
       setCurrentUser(authenticatedUser);
 
-      const { data: signupData, error: signupError } = await supabase
-        .from("signups")
-        .select("*");
-
-      if (signupError) {
-        console.error("Error loading Supabase signups:", signupError);
-      } else {
-        const formattedSignups = signupData.map((signup) => ({
-          id: signup.id,
-          studentUsername: signup.student_username,
-          studentName: signup.student_name,
-          className: signup.class_name,
-          opportunityId: signup.opportunity_id,
-          opportunityTitle: signup.opportunity_title,
-          opportunityLocation: signup.opportunity_location,
-          opportunityHours: signup.opportunity_hours,
-          teacherName: signup.teacher_name,
-          teacherUsername: signup.teacher_username,
-          status: signup.status,
-          source: signup.source,
-        }));
-
-        setSignups(formattedSignups);
+      if (!authenticatedUser) {
+        setTeacherOpportunities([]);
+        return;
       }
 
-      let opportunityQuery = supabase
-        .from("opportunities")
-        .select("*")
-        .order("event_date", { ascending: true });
+      let classIds = [];
 
-      if (
-        authenticatedUser &&
-        authenticatedUser.role &&
-        authenticatedUser.role.toLowerCase() === "student"
-      ) {
+      if (authenticatedUser.role.toLowerCase() === "student") {
         const { data: rosterData, error: rosterError } = await supabase
           .from("class_rosters")
-          .select("class_name")
+          .select("class_id")
           .eq("student_username", authenticatedUser.username);
 
         if (rosterError) {
@@ -61,44 +34,53 @@ export default function OpportunitiesPage() {
           return;
         }
 
-        const studentClassNames = rosterData
-          .map((row) => row.class_name)
+        classIds = (rosterData || [])
+          .map((row) => row.class_id)
           .filter(Boolean);
+      }
 
-        if (studentClassNames.length === 0) {
+      if (authenticatedUser.role.toLowerCase() === "teacher") {
+        const { data: teacherClassData, error: teacherClassError } =
+          await supabase
+            .from("class_teachers")
+            .select("class_id")
+            .eq("teacher_username", authenticatedUser.username);
+
+        if (teacherClassError) {
+          console.error(
+            "Error loading teacher shared classes:",
+            teacherClassError
+          );
           setTeacherOpportunities([]);
           return;
         }
 
-        opportunityQuery = opportunityQuery.in("class_name", studentClassNames);
-      } else if (
-        authenticatedUser &&
-        authenticatedUser.role &&
-        authenticatedUser.role.toLowerCase() === "teacher"
-      ) {
-        opportunityQuery = opportunityQuery.eq(
-          "teacher_username",
-          authenticatedUser.username
-        );
-      } else {
+        classIds = (teacherClassData || [])
+          .map((row) => row.class_id)
+          .filter(Boolean);
+      }
+
+      if (classIds.length === 0) {
         setTeacherOpportunities([]);
+        setSignups([]);
         return;
       }
 
-      const { data: opportunityData, error: opportunityError } =
-        await opportunityQuery;
+      const { data: opportunityData, error: opportunityError } = await supabase
+        .from("opportunities")
+        .select("*")
+        .in("class_id", classIds)
+        .order("event_date", { ascending: true });
 
       if (opportunityError) {
-        console.error(
-          "Error loading Supabase opportunities:",
-          opportunityError
-        );
+        console.error("Error loading opportunities:", opportunityError);
         alert("Could not load teacher opportunities from Supabase.");
         return;
       }
 
-      const formattedOpportunities = opportunityData.map((item) => ({
+      const formattedOpportunities = (opportunityData || []).map((item) => ({
         id: item.id,
+        classId: item.class_id,
         title: item.title,
         description: item.description,
         location: item.location,
@@ -114,6 +96,43 @@ export default function OpportunitiesPage() {
       }));
 
       setTeacherOpportunities(formattedOpportunities);
+
+      const opportunityIds = formattedOpportunities
+        .map((opportunity) => opportunity.id)
+        .filter(Boolean);
+
+      if (opportunityIds.length === 0) {
+        setSignups([]);
+        return;
+      }
+
+      const { data: signupData, error: signupError } = await supabase
+        .from("signups")
+        .select("*")
+        .in("opportunity_id", opportunityIds);
+
+      if (signupError) {
+        console.error("Error loading Supabase signups:", signupError);
+        setSignups([]);
+      } else {
+        const formattedSignups = (signupData || []).map((signup) => ({
+          id: signup.id,
+          classId: signup.class_id,
+          studentUsername: signup.student_username,
+          studentName: signup.student_name,
+          className: signup.class_name,
+          opportunityId: signup.opportunity_id,
+          opportunityTitle: signup.opportunity_title,
+          opportunityLocation: signup.opportunity_location,
+          opportunityHours: signup.opportunity_hours,
+          teacherName: signup.teacher_name,
+          teacherUsername: signup.teacher_username,
+          status: signup.status,
+          source: signup.source,
+        }));
+
+        setSignups(formattedSignups);
+      }
     }
 
     loadData();
@@ -144,9 +163,9 @@ export default function OpportunitiesPage() {
         role = "student";
         className = "Not assigned yet";
       } else if (
-  email.endsWith("@coppellisd.com") || email === "mjatx07@gmail.com" || email === "mjatx07@gmail.com" ||
-  email === "mjatx07@gmail.com"
-) {
+        email.endsWith("@coppellisd.com") ||
+        email === "mjatx07@gmail.com"
+      ) {
         role = "teacher";
         className = "Teacher Class";
       } else {
@@ -193,6 +212,32 @@ export default function OpportunitiesPage() {
     window.open(mapsUrl, "_blank");
   }
 
+  function getOpportunityEndDateTime(opportunity) {
+    if (!opportunity.eventDate) {
+      return null;
+    }
+
+    const endTime = opportunity.endTime || opportunity.startTime || "23:59";
+    const dateTimeString = `${opportunity.eventDate}T${endTime}`;
+    const parsedDate = new Date(dateTimeString);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return null;
+    }
+
+    return parsedDate;
+  }
+
+  function hasOpportunityPassed(opportunity) {
+    const opportunityEndDateTime = getOpportunityEndDateTime(opportunity);
+
+    if (!opportunityEndDateTime) {
+      return false;
+    }
+
+    return opportunityEndDateTime < new Date();
+  }
+
   async function signUpForTeacherOpportunity(opportunity) {
     if (!currentUser) {
       alert("Please log in before signing up.");
@@ -202,6 +247,11 @@ export default function OpportunitiesPage() {
 
     if (currentUser.role.toLowerCase() !== "student") {
       alert("Only students can sign up for volunteer activities.");
+      return;
+    }
+
+    if (hasOpportunityPassed(opportunity)) {
+      alert("This opportunity has already passed, so signup is closed.");
       return;
     }
 
@@ -233,9 +283,10 @@ export default function OpportunitiesPage() {
     }
 
     const newSignupForSupabase = {
+      class_id: opportunity.classId,
       student_username: currentUser.username,
       student_name: currentUser.displayName,
-      class_name: opportunity.className || currentUser.className || "",
+      class_name: opportunity.className || "",
       opportunity_id: opportunity.id,
       opportunity_title: opportunity.title,
       opportunity_location: opportunity.location,
@@ -254,12 +305,13 @@ export default function OpportunitiesPage() {
 
     if (error) {
       console.error("Error saving signup:", error);
-      alert("Signup failed. Please try again.");
+      alert(error.message || "Signup failed. Please try again.");
       return;
     }
 
     const newSignupForPage = {
       id: data.id,
+      classId: data.class_id,
       studentUsername: data.student_username,
       studentName: data.student_name,
       className: data.class_name,
@@ -400,6 +452,18 @@ export default function OpportunitiesPage() {
       contact: "volunteer@theatrecoppell.com",
       ageRequirement: "Some roles 12+ with adult; some 18+",
     },
+    {
+  id: 10,
+  title: "Coppell Public Library Teen Volunteers",
+  description:
+    "Help with library programs, youth activities, shelving support, reading events, summer programs, and community learning activities.",
+  area: "Coppell",
+  category: "Library / Education",
+  signupLink: "https://www.coppelltx.gov/203/Library",
+  contact: "Coppell Public Library",
+  ageRequirement: "Teen roles may vary; confirm with the library",
+},
+    
     {
       id: 11,
       title: "Metrocrest Services",
@@ -750,6 +814,8 @@ export default function OpportunitiesPage() {
     },
   ];
 
+  const communityUpdatedToday = new Date().toLocaleDateString();
+
   const allCategories = [
     "All",
     ...new Set([
@@ -844,6 +910,7 @@ export default function OpportunitiesPage() {
               const activeSignupCount = getActiveSignupCount(opportunity.id);
               const maxSpots = Number(opportunity.maxSpots);
               const isFull = maxSpots && activeSignupCount >= maxSpots;
+              const isPastEvent = hasOpportunityPassed(opportunity);
 
               return (
                 <div style={teacherCardStyle} key={opportunity.id || index}>
@@ -852,6 +919,11 @@ export default function OpportunitiesPage() {
                   <h3 style={cardTitleStyle}>{opportunity.title}</h3>
 
                   <p style={cardTextStyle}>{opportunity.description}</p>
+
+                  <p style={cardTextStyle}>
+                    <strong>Class:</strong>{" "}
+                    {opportunity.className || "Shared class"}
+                  </p>
 
                   <p style={cardTextStyle}>
                     <strong>Location:</strong> {opportunity.location}
@@ -894,7 +966,11 @@ export default function OpportunitiesPage() {
                     Get Distance / Directions
                   </button>
 
-                  {isFull ? (
+                  {isPastEvent ? (
+                    <button style={pastEventButtonStyle} disabled>
+                      Event Has Passed
+                    </button>
+                  ) : isFull ? (
                     <button style={fullButtonStyle} disabled>
                       Opportunity Full
                     </button>
@@ -931,6 +1007,10 @@ export default function OpportunitiesPage() {
 
       <section style={sectionBlockStyle}>
         <h2 style={sectionHeadingStyle}>Coppell-Area Community Opportunities</h2>
+
+        <p style={communityUpdatedStyle}>
+          Community list refreshed daily. Last checked: {communityUpdatedToday}
+        </p>
 
         <div style={listStyle}>
           {filteredCommunityOpportunities.map((opportunity) => (
@@ -1063,9 +1143,17 @@ const sectionHeadingStyle = {
   fontFamily: "Roboto,Segoe UI, Arial",
 };
 
+const communityUpdatedStyle = {
+  color: "#374151",
+  fontSize: "15px",
+  fontWeight: 700,
+  marginTop: "-10px",
+  marginBottom: "20px",
+};
+
 const listStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(3, 1fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   gap: "24px",
 };
 
@@ -1171,6 +1259,18 @@ const fullButtonStyle = {
   marginTop: "16px",
   padding: "10px 18px",
   backgroundColor: "#9ca3af",
+  color: "white",
+  border: "none",
+  borderRadius: "8px",
+  cursor: "not-allowed",
+  fontWeight: 600,
+  fontFamily: "Roboto,Segoe UI, Arial",
+};
+
+const pastEventButtonStyle = {
+  marginTop: "16px",
+  padding: "10px 18px",
+  backgroundColor: "#6b7280",
   color: "white",
   border: "none",
   borderRadius: "8px",

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AppMailbox from "@/app/components/AppMailbox";
 
 export default function AppNav() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [isLoadingUser, setIsLoadingUser] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadAuthenticatedUser() {
+    async function loadCurrentUser() {
       try {
         const response = await fetch("/auth/profile", {
           cache: "no-store",
@@ -15,7 +16,7 @@ export default function AppNav() {
 
         if (!response.ok) {
           setCurrentUser(null);
-          setIsLoadingUser(false);
+          setLoading(false);
           return;
         }
 
@@ -23,28 +24,28 @@ export default function AppNav() {
 
         if (!auth0User || !auth0User.email) {
           setCurrentUser(null);
-          setIsLoadingUser(false);
+          setLoading(false);
           return;
         }
 
         const email = auth0User.email.toLowerCase().trim();
 
         let role = "";
-        let className = "";
 
         if (email.endsWith("@g.coppellisd.com")) {
           role = "student";
-          className = "Not assigned yet";
-        } else if (email.endsWith("@coppellisd.com") || email === "mjatx07@gmail.com") {
+        } else if (
+          email.endsWith("@coppellisd.com") ||
+          email === "mjatx07@gmail.com"
+        ) {
           role = "teacher";
-          className = "Teacher Class";
         } else {
           setCurrentUser(null);
-          setIsLoadingUser(false);
+          setLoading(false);
           return;
         }
 
-        const usernameFromEmail = email
+        const username = email
           .split("@")[0]
           .toLowerCase()
           .replace(/[^a-z0-9]/g, "");
@@ -53,35 +54,30 @@ export default function AppNav() {
           auth0User.name ||
           auth0User.nickname ||
           auth0User.given_name ||
-          usernameFromEmail;
+          username;
 
-        const appUser = {
+        setCurrentUser({
           displayName,
-          username: usernameFromEmail,
+          username,
           email,
-          className,
           role,
           avatar: "🙂",
-          authProvider: "google",
-        };
+        });
 
-        setCurrentUser(appUser);
-        setIsLoadingUser(false);
+        setLoading(false);
       } catch (error) {
-        console.error("Error loading authenticated user:", error);
+        console.error("Error loading AppNav user:", error);
         setCurrentUser(null);
-        setIsLoadingUser(false);
+        setLoading(false);
       }
     }
 
-    loadAuthenticatedUser();
-
-    window.addEventListener("authChanged", loadAuthenticatedUser);
-
-    return () => {
-      window.removeEventListener("authChanged", loadAuthenticatedUser);
-    };
+    loadCurrentUser();
   }, []);
+
+  function logout() {
+    window.location.href = "/logout";
+  }
 
   const logo = (
     <a href="/" style={logoLinkStyle}>
@@ -89,20 +85,10 @@ export default function AppNav() {
     </a>
   );
 
-  if (isLoadingUser) {
+  if (loading) {
     return (
       <nav className="global-app-nav" style={navStyle}>
         {logo}
-
-        <div style={navLinksStyle}>
-          <a href="/" style={linkStyle}>
-            Home
-          </a>
-
-          <a href="/about" style={linkStyle}>
-            About
-          </a>
-        </div>
       </nav>
     );
   }
@@ -162,9 +148,11 @@ export default function AppNav() {
             Dashboard
           </a>
 
-          <a href="/logout" style={logoutLinkStyle}>
+          <AppMailbox />
+
+          <button style={logoutButtonStyle} onClick={logout}>
             Logout
-          </a>
+          </button>
         </div>
       </nav>
     );
@@ -207,9 +195,11 @@ export default function AppNav() {
           About
         </a>
 
-        <a href="/logout" style={logoutLinkStyle}>
+        <AppMailbox />
+
+        <button style={logoutButtonStyle} onClick={logout}>
           Logout
-        </a>
+        </button>
       </div>
     </nav>
   );
@@ -269,18 +259,6 @@ const buttonLinkStyle = {
   fontFamily: "Arial, sans-serif",
 };
 
-const logoutLinkStyle = {
-  color: "white",
-  backgroundColor: "#b91c1c",
-  padding: "9px 14px",
-  borderRadius: "8px",
-  fontSize: "16px",
-  cursor: "pointer",
-  textDecoration: "none",
-  fontWeight: 700,
-  fontFamily: "Arial, sans-serif",
-};
-
 const profileLinkStyle = {
   display: "flex",
   alignItems: "center",
@@ -303,4 +281,16 @@ const avatarStyle = {
   justifyContent: "center",
   alignItems: "center",
   fontSize: "20px",
+};
+
+const logoutButtonStyle = {
+  color: "white",
+  backgroundColor: "#b91c1c",
+  padding: "9px 14px",
+  borderRadius: "8px",
+  fontSize: "16px",
+  cursor: "pointer",
+  border: "none",
+  fontWeight: 700,
+  fontFamily: "Arial, sans-serif",
 };

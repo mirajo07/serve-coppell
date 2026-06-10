@@ -102,9 +102,9 @@ export default function TrackHoursPage() {
         role = "student";
         className = "Not assigned yet";
       } else if (
-  email.endsWith("@coppellisd.com") || email === "mjatx07@gmail.com" || email === "mjatx07@gmail.com" || email === "mjatx07@gmail.com" || email === "mjatx07@gmail.com" ||
-  email === "mjatx07@gmail.com"
-) {
+        email.endsWith("@coppellisd.com") ||
+        email === "mjatx07@gmail.com"
+      ) {
         role = "teacher";
         className = "Teacher Class";
       } else {
@@ -347,10 +347,6 @@ export default function TrackHoursPage() {
     return entry.studentUsername === currentUser.username;
   });
 
-  const myTotalHours = mySavedHours.reduce((total, entry) => {
-    return total + Number(entry.hours);
-  }, 0);
-
   const pastContacts = [];
 
   mySavedHours.forEach((entry) => {
@@ -425,20 +421,8 @@ export default function TrackHoursPage() {
       <section style={headerStyle}>
         <h1 style={titleStyle}>Track Volunteer Hours</h1>
         <p style={subtitleStyle}>
-          Logged in as {currentUser.displayName}. Manually save your hours here.
+          Logged in as {currentUser.displayName}. Save your volunteer hours here.
         </p>
-      </section>
-
-      <section style={summarySectionStyle}>
-        <div style={summaryCardStyle}>
-          <h2 style={summaryNumberStyle}>{myTotalHours}</h2>
-          <p style={summaryTextStyle}>Manually Tracked Hours</p>
-        </div>
-
-        <div style={summaryCardStyle}>
-          <h2 style={summaryNumberStyle}>{mySavedHours.length}</h2>
-          <p style={summaryTextStyle}>My Activities</p>
-        </div>
       </section>
 
       <section style={formSectionStyle}>
@@ -593,6 +577,10 @@ export default function TrackHoursPage() {
                 </p>
 
                 <p>
+                  <strong>Status:</strong> {entry.status}
+                </p>
+
+                <p>
                   <strong>Notes:</strong> {entry.notes || "No notes entered"}
                 </p>
 
@@ -648,34 +636,6 @@ const titleStyle = {
 const subtitleStyle = {
   fontSize: "18px",
   color: "#374151",
-};
-
-const summarySectionStyle = {
-  display: "flex",
-  gap: "24px",
-  justifyContent: "center",
-  padding: "40px 40px 0",
-};
-
-const summaryCardStyle = {
-  backgroundColor: "white",
-  padding: "24px",
-  borderRadius: "16px",
-  border: "1px solid #d1d5db",
-  boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
-  width: "240px",
-  textAlign: "center",
-};
-
-const summaryNumberStyle = {
-  fontSize: "40px",
-  color: "#047857",
-  margin: 0,
-};
-
-const summaryTextStyle = {
-  color: "#111827",
-  fontWeight: 600,
 };
 
 const formSectionStyle = {

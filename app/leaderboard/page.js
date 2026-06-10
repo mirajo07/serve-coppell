@@ -5,10 +5,23 @@ import { supabase } from "@/lib/supabase";
 
 export default function LeaderboardPage() {
   const [leaderboardStudents, setLeaderboardStudents] = useState([]);
+  const [categoryLeaderboards, setCategoryLeaderboards] = useState([]);
   const [filterType, setFilterType] = useState("all-time");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [loading, setLoading] = useState(true);
+
+  const categories = [
+    "Community Service",
+    "Food & Hunger",
+    "Environment",
+    "Animals",
+    "Library / Education",
+    "Arts",
+    "Hospital / Healthcare",
+    "Senior Support",
+    "School",
+  ];
 
   useEffect(() => {
     buildLeaderboard();
@@ -23,7 +36,7 @@ export default function LeaderboardPage() {
 
     const { data: signupsData, error: signupsError } = await supabase
       .from("signups")
-      .select("*, opportunities(event_date)");
+      .select("*, opportunities(event_date, category)");
 
     if (manualHoursError) {
       console.error("Error loading manual hours:", manualHoursError);
@@ -34,6 +47,11 @@ export default function LeaderboardPage() {
     }
 
     const studentTotals = {};
+    const categoryTotals = {};
+
+    categories.forEach((category) => {
+      categoryTotals[category] = {};
+    });
 
     function addHoursToStudent(studentUsername, studentName, hours) {
       const key = studentUsername || studentName;
@@ -55,6 +73,35 @@ export default function LeaderboardPage() {
       studentTotals[key].eventCount = studentTotals[key].eventCount + 1;
     }
 
+    function addHoursToCategory(category, studentUsername, studentName, hours) {
+      const cleanCategory = category || "Community Service";
+
+      if (!categoryTotals[cleanCategory]) {
+        categoryTotals[cleanCategory] = {};
+      }
+
+      const key = studentUsername || studentName;
+
+      if (!key) {
+        return;
+      }
+
+      if (!categoryTotals[cleanCategory][key]) {
+        categoryTotals[cleanCategory][key] = {
+          username: studentUsername || studentName,
+          name: studentName || studentUsername,
+          categoryHours: 0,
+          eventCount: 0,
+        };
+      }
+
+      categoryTotals[cleanCategory][key].categoryHours =
+        categoryTotals[cleanCategory][key].categoryHours + hours;
+
+      categoryTotals[cleanCategory][key].eventCount =
+        categoryTotals[cleanCategory][key].eventCount + 1;
+    }
+
     if (manualHoursData) {
       manualHoursData.forEach((entry) => {
         if (entry.status && entry.status !== "approved") {
@@ -68,8 +115,12 @@ export default function LeaderboardPage() {
         }
 
         const hours = Number(entry.hours) || 0;
+        const category = entry.category || "Community Service";
 
-        addHoursToStudent(
+        addHoursToStudent(entry.student_username, entry.student_name, hours);
+
+        addHoursToCategory(
+          category,
           entry.student_username,
           entry.student_name,
           hours
@@ -98,8 +149,12 @@ export default function LeaderboardPage() {
         }
 
         const hours = Number(signup.opportunity_hours) || 0;
+        const category = signup.opportunities?.category || "Community Service";
 
-        addHoursToStudent(
+        addHoursToStudent(signup.student_username, signup.student_name, hours);
+
+        addHoursToCategory(
+          category,
           signup.student_username,
           signup.student_name,
           hours
@@ -115,7 +170,25 @@ export default function LeaderboardPage() {
       return b.totalHours - a.totalHours;
     });
 
+    const categoryLeaderboardArray = categories.map((category) => {
+      const studentsObject = categoryTotals[category] || {};
+
+      const studentsArray = Object.keys(studentsObject).map((key) => {
+        return studentsObject[key];
+      });
+
+      studentsArray.sort((a, b) => {
+        return b.categoryHours - a.categoryHours;
+      });
+
+      return {
+        category,
+        students: studentsArray.slice(0, 3),
+      };
+    });
+
     setLeaderboardStudents(leaderboardArray);
+    setCategoryLeaderboards(categoryLeaderboardArray);
     setLoading(false);
   }
 
@@ -294,6 +367,10 @@ export default function LeaderboardPage() {
 
       <section style={leaderboardSectionStyle}>
         <div style={leaderboardCardStyle}>
+          <div style={leaderboardTitleBarStyle}>
+            <h2 style={leaderboardTitleStyle}>Main Leaderboard</h2>
+          </div>
+
           <div style={tableHeaderStyle}>
             <span>Rank</span>
             <span>Student</span>
@@ -328,6 +405,52 @@ export default function LeaderboardPage() {
               </div>
             ))
           )}
+        </div>
+      </section>
+
+      <section style={categorySectionStyle}>
+        <div style={categoryHeaderCardStyle}>
+          <h2 style={categoryMainTitleStyle}>Top 3 Students by Category</h2>
+
+          <p style={categoryMainTextStyle}>
+            These rankings only count hours from that specific category.
+          </p>
+        </div>
+
+        <div style={categoryGridStyle}>
+          {categoryLeaderboards.map((categoryBoard) => (
+            <div style={categoryCardStyle} key={categoryBoard.category}>
+              <h3 style={categoryTitleStyle}>{categoryBoard.category}</h3>
+
+              {loading ? (
+                <p style={categoryEmptyStyle}>Loading...</p>
+              ) : categoryBoard.students.length === 0 ? (
+                <p style={categoryEmptyStyle}>No hours yet.</p>
+              ) : (
+                <div style={categoryListStyle}>
+                  {categoryBoard.students.map((student, index) => (
+                    <div style={categoryRowStyle} key={student.username}>
+                      <span style={categoryRankStyle}>
+                        {index === 0
+                          ? "🥇"
+                          : index === 1
+                          ? "🥈"
+                          : "🥉"}
+                      </span>
+
+                      <span style={categoryStudentNameStyle}>
+                        {student.name}
+                      </span>
+
+                      <span style={categoryHoursStyle}>
+                        {student.categoryHours} hrs
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </section>
     </main>
@@ -482,7 +605,7 @@ const encouragementTextStyle = {
 };
 
 const leaderboardSectionStyle = {
-  padding: "50px 40px",
+  padding: "50px 40px 30px",
   display: "flex",
   justifyContent: "center",
 };
@@ -495,6 +618,18 @@ const leaderboardCardStyle = {
   border: "1px solid #d1d5db",
   boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
   overflow: "hidden",
+};
+
+const leaderboardTitleBarStyle = {
+  padding: "20px 24px",
+  backgroundColor: "white",
+  borderBottom: "1px solid #e5e7eb",
+};
+
+const leaderboardTitleStyle = {
+  margin: 0,
+  color: "#111827",
+  fontSize: "26px",
 };
 
 const tableHeaderStyle = {
@@ -538,4 +673,94 @@ const emptyTextStyle = {
   color: "#374151",
   fontSize: "18px",
   fontFamily: "Roboto, Segoe UI, Arial",
+};
+
+const categorySectionStyle = {
+  padding: "10px 40px 70px",
+};
+
+const categoryHeaderCardStyle = {
+  maxWidth: "950px",
+  margin: "0 auto 24px",
+  backgroundColor: "white",
+  border: "1px solid #d1d5db",
+  borderRadius: "16px",
+  padding: "24px",
+  textAlign: "center",
+  boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
+};
+
+const categoryMainTitleStyle = {
+  marginTop: 0,
+  marginBottom: "8px",
+  color: "#111827",
+  fontSize: "30px",
+};
+
+const categoryMainTextStyle = {
+  color: "#374151",
+  fontSize: "16px",
+  margin: 0,
+};
+
+const categoryGridStyle = {
+  maxWidth: "1200px",
+  margin: "0 auto",
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(310px, 1fr))",
+  gap: "20px",
+};
+
+const categoryCardStyle = {
+  backgroundColor: "white",
+  border: "1px solid #d1d5db",
+  borderRadius: "16px",
+  padding: "22px",
+  boxShadow: "0 4px 12px rgba(149, 216, 247, 0.31)",
+};
+
+const categoryTitleStyle = {
+  color: "#111827",
+  fontSize: "22px",
+  marginTop: 0,
+  marginBottom: "16px",
+};
+
+const categoryListStyle = {
+  display: "grid",
+  gap: "12px",
+};
+
+const categoryRowStyle = {
+  display: "grid",
+  gridTemplateColumns: "44px 1fr auto",
+  gap: "10px",
+  alignItems: "center",
+  backgroundColor: "#f9fafb",
+  border: "1px solid #e5e7eb",
+  borderRadius: "12px",
+  padding: "12px",
+};
+
+const categoryRankStyle = {
+  fontSize: "22px",
+};
+
+const categoryStudentNameStyle = {
+  color: "#111827",
+  fontWeight: 700,
+};
+
+const categoryHoursStyle = {
+  color: "#ea580c",
+  fontWeight: 900,
+};
+
+const categoryEmptyStyle = {
+  color: "#6b7280",
+  backgroundColor: "#f9fafb",
+  border: "1px dashed #d1d5db",
+  borderRadius: "12px",
+  padding: "14px",
+  textAlign: "center",
 };

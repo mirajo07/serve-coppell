@@ -15,8 +15,9 @@ export default function AddOpportunityPage() {
   const [endTime, setEndTime] = useState("");
   const [category, setCategory] = useState("Community Service");
   const [maxSpots, setMaxSpots] = useState("");
-  const [targetClassName, setTargetClassName] = useState("");
-  const [teacherClassNames, setTeacherClassNames] = useState([]);
+
+  const [teacherClasses, setTeacherClasses] = useState([]);
+  const [selectedClassId, setSelectedClassId] = useState("");
 
   const [message, setMessage] = useState("");
   const [showSavedPopup, setShowSavedPopup] = useState(false);
@@ -27,7 +28,7 @@ export default function AddOpportunityPage() {
   const [confirmAction, setConfirmAction] = useState(null);
 
   useEffect(() => {
-    async function loadOpportunities() {
+    async function loadPage() {
       const authenticatedUser = await getAuthenticatedAppUser();
 
       if (!authenticatedUser) {
@@ -42,66 +43,22 @@ export default function AddOpportunityPage() {
 
       setCurrentUser(authenticatedUser);
 
-      const { data: rosterData, error: rosterError } = await supabase
-        .from("class_rosters")
-        .select("class_name")
-        .eq("teacher_username", authenticatedUser.username);
+      const classesForTeacher = await loadTeacherSharedClasses(
+        authenticatedUser.username
+      );
 
-      if (rosterError) {
-        console.error("Error loading teacher classes:", rosterError);
+      if (classesForTeacher.length > 0) {
+        const firstClassId = classesForTeacher[0].id;
+        setSelectedClassId(firstClassId);
+        await loadSharedClassOpportunities(classesForTeacher);
       } else {
-        const uniqueClassNames = [
-          ...new Set(
-            rosterData
-              .map((row) => row.class_name)
-              .filter((className) => className && className.trim())
-          ),
-        ];
-
-        setTeacherClassNames(uniqueClassNames);
-
-        if (uniqueClassNames.length > 0) {
-          setTargetClassName(uniqueClassNames[0]);
-        } else {
-          setTargetClassName(authenticatedUser.className || "Teacher Class");
-        }
+        setMessage(
+          "No shared classes found. Create a class first from the Class page."
+        );
       }
-
-      const { data, error } = await supabase
-        .from("opportunities")
-        .select("*")
-        .eq("teacher_username", authenticatedUser.username)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Error loading opportunities:", error);
-        setMessage("Could not load your posted opportunities.");
-        return;
-      }
-
-      const formattedOpportunities = data.map((item) => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        location: item.location,
-        hours: item.hours,
-        eventDate: item.event_date,
-        startTime: item.start_time,
-        endTime: item.end_time,
-        category: item.category,
-        maxSpots: item.max_spots,
-        teacherName: item.teacher_name,
-        teacherUsername: item.teacher_username,
-        className: item.class_name,
-        createdAt: item.created_at
-          ? new Date(item.created_at).toLocaleString()
-          : "",
-      }));
-
-      setTeacherOpportunities(formattedOpportunities);
     }
 
-    loadOpportunities();
+    loadPage();
   }, []);
 
   async function getAuthenticatedAppUser() {
@@ -129,9 +86,9 @@ export default function AddOpportunityPage() {
         role = "student";
         className = "Not assigned yet";
       } else if (
-  email.endsWith("@coppellisd.com") || email === "mjatx07@gmail.com" || email === "mjatx07@gmail.com" ||
-  email === "mjatx07@gmail.com"
-) {
+        email.endsWith("@coppellisd.com") ||
+        email === "mjatx07@gmail.com"
+      ) {
         role = "teacher";
         className = "Teacher Class";
       } else {
@@ -165,6 +122,76 @@ export default function AddOpportunityPage() {
     }
   }
 
+  function getClassDisplayName(classItem) {
+    return classItem?.class_name || classItem?.name || "Untitled Class";
+  }
+
+  async function loadTeacherSharedClasses(teacherUsername) {
+    const { data, error } = await supabase
+      .from("class_teachers")
+      .select("class_id, classes(*)")
+      .eq("teacher_username", teacherUsername)
+      .order("added_at", { ascending: false });
+
+    if (error) {
+      console.error("Error loading shared classes:", JSON.stringify(error, null, 2));
+      setMessage(error.message || "Could not load your shared classes.");
+      setTeacherClasses([]);
+      return [];
+    }
+
+    const classesForTeacher = (data || [])
+      .map((item) => item.classes)
+      .filter(Boolean);
+
+    setTeacherClasses(classesForTeacher);
+    return classesForTeacher;
+  }
+
+  async function loadSharedClassOpportunities(classesForTeacher) {
+    const classIds = classesForTeacher.map((classItem) => classItem.id);
+
+    if (classIds.length === 0) {
+      setTeacherOpportunities([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("opportunities")
+      .select("*")
+      .in("class_id", classIds)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error loading opportunities:", JSON.stringify(error, null, 2));
+      setMessage(error.message || "Could not load posted opportunities.");
+      setTeacherOpportunities([]);
+      return;
+    }
+
+    const formattedOpportunities = (data || []).map((item) => ({
+      id: item.id,
+      classId: item.class_id,
+      title: item.title,
+      description: item.description,
+      location: item.location,
+      hours: item.hours,
+      eventDate: item.event_date,
+      startTime: item.start_time,
+      endTime: item.end_time,
+      category: item.category,
+      maxSpots: item.max_spots,
+      teacherName: item.teacher_name,
+      teacherUsername: item.teacher_username,
+      className: item.class_name,
+      createdAt: item.created_at
+        ? new Date(item.created_at).toLocaleString()
+        : "",
+    }));
+
+    setTeacherOpportunities(formattedOpportunities);
+  }
+
   function clearForm() {
     setTitle("");
     setDescription("");
@@ -192,6 +219,20 @@ export default function AddOpportunityPage() {
       return;
     }
 
+    if (!selectedClassId) {
+      setMessage("Please select a shared class first.");
+      return;
+    }
+
+    const selectedClass = teacherClasses.find(
+      (classItem) => classItem.id === selectedClassId
+    );
+
+    if (!selectedClass) {
+      setMessage("Selected class could not be found.");
+      return;
+    }
+
     if (
       !title.trim() ||
       !description.trim() ||
@@ -200,14 +241,16 @@ export default function AddOpportunityPage() {
       !eventDate ||
       !startTime ||
       !endTime ||
-      !maxSpots ||
-      !targetClassName.trim()
+      !maxSpots
     ) {
-      setMessage("Please fill out all required fields, including class name.");
+      setMessage("Please fill out all required fields.");
       return;
     }
 
+    const selectedClassName = getClassDisplayName(selectedClass);
+
     const newOpportunityForSupabase = {
+      class_id: selectedClassId,
       title: title.trim(),
       description: description.trim(),
       location: location.trim(),
@@ -219,7 +262,7 @@ export default function AddOpportunityPage() {
       max_spots: Number(maxSpots),
       teacher_name: currentUser.displayName,
       teacher_username: currentUser.username,
-      class_name: targetClassName.trim(),
+      class_name: selectedClassName,
     };
 
     const { data, error } = await supabase
@@ -229,13 +272,14 @@ export default function AddOpportunityPage() {
       .single();
 
     if (error) {
-      console.error("Error saving opportunity:", error);
-      setMessage("Opportunity could not be saved.");
+      console.error("Error saving opportunity:", JSON.stringify(error, null, 2));
+      setMessage(error.message || "Opportunity could not be saved.");
       return;
     }
 
     const newOpportunityForPage = {
       id: data.id,
+      classId: data.class_id,
       title: data.title,
       description: data.description,
       location: data.location,
@@ -279,8 +323,13 @@ export default function AddOpportunityPage() {
       .eq("opportunity_id", opportunityId);
 
     if (signupDeleteError) {
-      console.error("Error deleting related signups:", signupDeleteError);
-      setMessage("Could not delete related student signups.");
+      console.error(
+        "Error deleting related signups:",
+        JSON.stringify(signupDeleteError, null, 2)
+      );
+      setMessage(
+        signupDeleteError.message || "Could not delete related student signups."
+      );
       return;
     }
 
@@ -290,8 +339,8 @@ export default function AddOpportunityPage() {
       .eq("id", opportunityId);
 
     if (error) {
-      console.error("Error deleting opportunity:", error);
-      setMessage("Opportunity could not be deleted.");
+      console.error("Error deleting opportunity:", JSON.stringify(error, null, 2));
+      setMessage(error.message || "Opportunity could not be deleted.");
       return;
     }
 
@@ -322,10 +371,6 @@ export default function AddOpportunityPage() {
   if (!currentUser) {
     return null;
   }
-
-  const myOpportunities = teacherOpportunities.filter((opportunity) => {
-    return opportunity.teacherUsername === currentUser.username;
-  });
 
   return (
     <main style={pageStyle}>
@@ -365,8 +410,8 @@ export default function AddOpportunityPage() {
 
         <p style={subtitleStyle}>
           Logged in as {currentUser.displayName}. Opportunities you create will
-          show your teacher name and only appear to students in the selected
-          class.
+          appear to students in the selected shared class. Co-teachers attached
+          to the same class can also manage the class activity.
         </p>
 
         <p style={userInfoStyle}>
@@ -376,32 +421,36 @@ export default function AddOpportunityPage() {
 
       <section style={formSectionStyle}>
         <div style={formCardStyle}>
-          <label style={labelStyle}>Class for This Opportunity *</label>
+          <label style={labelStyle}>Shared Class for This Opportunity *</label>
 
-          {teacherClassNames.length > 0 ? (
+          {teacherClasses.length > 0 ? (
             <select
               style={inputStyle}
-              value={targetClassName}
-              onChange={(event) => setTargetClassName(event.target.value)}
+              value={selectedClassId}
+              onChange={(event) => setSelectedClassId(event.target.value)}
             >
-              {teacherClassNames.map((className) => (
-                <option value={className} key={className}>
-                  {className}
+              {teacherClasses.map((classItem) => (
+                <option value={classItem.id} key={classItem.id}>
+                  {getClassDisplayName(classItem)}
                 </option>
               ))}
             </select>
           ) : (
-            <input
-              style={inputStyle}
-              placeholder="Example: NJHS Period 3"
-              value={targetClassName}
-              onChange={(event) => setTargetClassName(event.target.value)}
-            />
+            <div style={warningBoxStyle}>
+              <p style={warningTextStyle}>
+                No shared class found. Go to the Class page and create a shared
+                class first.
+              </p>
+
+              <a href="/teacher/class" style={warningLinkStyle}>
+                Go to Class Page
+              </a>
+            </div>
           )}
 
           <p style={helperTextStyle}>
-            Students must be in this class roster to see this teacher
-            opportunity.
+            This opportunity is saved with the shared class ID, so both teachers
+            connected to this class can work with the same students.
           </p>
 
           <label style={labelStyle}>Opportunity Title *</label>
@@ -495,7 +544,11 @@ export default function AddOpportunityPage() {
           </select>
 
           <div style={formButtonRowStyle}>
-            <button style={buttonStyle} onClick={saveOpportunity}>
+            <button
+              style={buttonStyle}
+              onClick={saveOpportunity}
+              disabled={teacherClasses.length === 0}
+            >
               Save Opportunity
             </button>
 
@@ -509,20 +562,25 @@ export default function AddOpportunityPage() {
       </section>
 
       <section style={opportunityListSectionStyle}>
-        <h2 style={sectionTitleStyle}>My Posted Opportunities</h2>
+        <h2 style={sectionTitleStyle}>Opportunities for My Shared Classes</h2>
 
-        {myOpportunities.length === 0 ? (
+        {teacherOpportunities.length === 0 ? (
           <p style={emptyTextStyle}>
-            You have not posted any opportunities yet.
+            There are no opportunities for your shared classes yet.
           </p>
         ) : (
           <div style={opportunityGridStyle}>
-            {myOpportunities.map((opportunity) => (
+            {teacherOpportunities.map((opportunity) => (
               <div style={opportunityCardStyle} key={opportunity.id}>
                 <h3 style={opportunityTitleStyle}>{opportunity.title}</h3>
 
                 <p>
                   <strong>Class:</strong> {opportunity.className || "Not set"}
+                </p>
+
+                <p>
+                  <strong>Posted By:</strong>{" "}
+                  {opportunity.teacherName || opportunity.teacherUsername}
                 </p>
 
                 <p>
@@ -614,6 +672,25 @@ const helperTextStyle = {
   fontSize: "14px",
   marginTop: "8px",
   fontFamily: "Roboto, Segoe UI, Arial",
+};
+
+const warningBoxStyle = {
+  backgroundColor: "#fffbeb",
+  border: "1px solid #f59e0b",
+  padding: "14px",
+  borderRadius: "10px",
+};
+
+const warningTextStyle = {
+  color: "#92400e",
+  margin: "0 0 10px",
+  fontWeight: 700,
+};
+
+const warningLinkStyle = {
+  color: "#2563eb",
+  fontWeight: 700,
+  textDecoration: "none",
 };
 
 const formSectionStyle = {
@@ -726,7 +803,7 @@ const emptyTextStyle = {
 
 const opportunityGridStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(3, 1fr)",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   gap: "24px",
 };
 

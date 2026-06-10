@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import StudentPdfExportButton from "../../components/StudentPdfExportButton";
+import AppMailbox from "@/app/components/AppMailbox";
 
 export default function StudentProfilePage() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -10,6 +11,10 @@ export default function StudentProfilePage() {
   const [volunteerHours, setVolunteerHours] = useState([]);
   const [signups, setSignups] = useState([]);
   const [message, setMessage] = useState("");
+  const [studentClassIds, setStudentClassIds] = useState([]);
+const [studentClassNames, setStudentClassNames] = useState([]);
+
+  const [selectedTeacherStatus, setSelectedTeacherStatus] = useState("pending");
 
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
@@ -93,6 +98,7 @@ export default function StudentProfilePage() {
       } else {
         const formattedHours = hoursData.map((entry) => ({
           id: entry.id,
+          eventType: "manual",
           studentUsername: entry.student_username,
           studentName: entry.student_name,
           className: entry.class_name,
@@ -114,7 +120,7 @@ export default function StudentProfilePage() {
 
       const { data: signupData, error: signupError } = await supabase
         .from("signups")
-        .select("*")
+        .select("*, opportunities(event_date, start_time, end_time, category)")
         .eq("student_username", authenticatedUser.username)
         .order("created_at", { ascending: false });
 
@@ -124,6 +130,7 @@ export default function StudentProfilePage() {
       } else {
         const formattedSignups = signupData.map((signup) => ({
           id: signup.id,
+          eventType: "teacher",
           studentUsername: signup.student_username,
           studentName: signup.student_name,
           className: signup.class_name,
@@ -131,6 +138,11 @@ export default function StudentProfilePage() {
           opportunityTitle: signup.opportunity_title,
           opportunityLocation: signup.opportunity_location,
           opportunityHours: signup.opportunity_hours,
+          opportunityDate: signup.opportunities?.event_date || "",
+          opportunityStartTime: signup.opportunities?.start_time || "",
+          opportunityEndTime: signup.opportunities?.end_time || "",
+          opportunityCategory:
+            signup.opportunities?.category || "Community Service",
           teacherName: signup.teacher_name,
           teacherUsername: signup.teacher_username,
           status: signup.status,
@@ -172,9 +184,9 @@ export default function StudentProfilePage() {
         role = "student";
         className = "Not assigned yet";
       } else if (
-  email.endsWith("@coppellisd.com") || email === "mjatx07@gmail.com" || email === "mjatx07@gmail.com" ||
-  email === "mjatx07@gmail.com"
-) {
+        email.endsWith("@coppellisd.com") ||
+        email === "mjatx07@gmail.com"
+      ) {
         role = "teacher";
         className = "Teacher Class";
       } else {
@@ -354,6 +366,7 @@ export default function StudentProfilePage() {
 
     const newEntryForPage = {
       id: data.id,
+      eventType: "manual",
       studentUsername: data.student_username,
       studentName: data.student_name,
       className: data.class_name,
@@ -426,7 +439,7 @@ export default function StudentProfilePage() {
     if (status === "completed") return "Completed / Hours Counted";
     if (status === "disapproved") return "Disapproved";
     if (status === "submitted") return "Submitted";
-    return status;
+    return status || "Unknown";
   }
 
   if (!currentUser) {
@@ -484,6 +497,46 @@ export default function StudentProfilePage() {
     return signup.status === "disapproved";
   });
 
+  const teacherStatusOptions = [
+    {
+      key: "pending",
+      label: "Pending",
+      count: pendingSignups.length,
+      items: pendingSignups,
+    },
+    {
+      key: "approved",
+      label: "Approved",
+      count: approvedSignups.length,
+      items: approvedSignups,
+    },
+    {
+      key: "needs-signature",
+      label: "Needs Signature",
+      count: needsSignatureSignups.length,
+      items: needsSignatureSignups,
+    },
+    {
+      key: "completed",
+      label: "Completed",
+      count: completedSignups.length,
+      items: completedSignups,
+    },
+    {
+      key: "disapproved",
+      label: "Disapproved",
+      count: disapprovedSignups.length,
+      items: disapprovedSignups,
+    },
+  ];
+
+  const selectedTeacherStatusOption =
+    teacherStatusOptions.find((option) => {
+      return option.key === selectedTeacherStatus;
+    }) || teacherStatusOptions[0];
+
+  const selectedTeacherStatusItems = selectedTeacherStatusOption.items;
+
   const pastContacts = [];
 
   myManualHours.forEach((entry) => {
@@ -539,15 +592,35 @@ export default function StudentProfilePage() {
     return entry.date;
   });
 
+  const datedTeacherSignups = myTeacherSignups.filter((signup) => {
+    return signup.opportunityDate;
+  });
+
   function getEventsForDay(day) {
     const dateString = `${calendarYear}-${String(calendarMonth + 1).padStart(
       2,
       "0"
     )}-${String(day).padStart(2, "0")}`;
 
-    return datedManualHours.filter((entry) => {
-      return entry.date === dateString;
-    });
+    const manualEvents = datedManualHours
+      .filter((entry) => {
+        return entry.date === dateString;
+      })
+      .map((entry) => ({
+        ...entry,
+        calendarType: "manual",
+      }));
+
+    const teacherEvents = datedTeacherSignups
+      .filter((signup) => {
+        return signup.opportunityDate === dateString;
+      })
+      .map((signup) => ({
+        ...signup,
+        calendarType: "teacher",
+      }));
+
+    return [...manualEvents, ...teacherEvents];
   }
 
   return (
@@ -709,74 +782,164 @@ export default function StudentProfilePage() {
             style={eventPopupCardStyle}
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 style={eventPopupTitleStyle}>
-              {selectedCalendarEvent.activityName}
-            </h2>
+            {selectedCalendarEvent.calendarType === "teacher" ? (
+              <>
+                <h2 style={eventPopupTitleStyle}>
+                  {selectedCalendarEvent.opportunityTitle}
+                </h2>
 
-            <p style={popupTextStyle}>
-              <strong>Organization:</strong>{" "}
-              {selectedCalendarEvent.organization}
-            </p>
+                <p style={popupTextStyle}>
+                  <strong>Type:</strong> Teacher Opportunity
+                </p>
 
-            <p style={popupTextStyle}>
-              <strong>Contact:</strong>{" "}
-              {selectedCalendarEvent.organizationContact || "Not provided"}
-            </p>
+                <p style={popupTextStyle}>
+                  <strong>Status:</strong>{" "}
+                  {formatStatus(selectedCalendarEvent.status)}
+                </p>
 
-            <p style={popupTextStyle}>
-              <strong>Category:</strong> {selectedCalendarEvent.category}
-            </p>
+                <p style={popupTextStyle}>
+                  <strong>Date:</strong>{" "}
+                  {selectedCalendarEvent.opportunityDate || "Not listed"}
+                </p>
 
-            <p style={popupTextStyle}>
-              <strong>Date:</strong> {selectedCalendarEvent.date}
-            </p>
+                <p style={popupTextStyle}>
+                  <strong>Time:</strong>{" "}
+                  {selectedCalendarEvent.opportunityStartTime ||
+                  selectedCalendarEvent.opportunityEndTime
+                    ? `${selectedCalendarEvent.opportunityStartTime || ""} ${
+                        selectedCalendarEvent.opportunityEndTime
+                          ? `- ${selectedCalendarEvent.opportunityEndTime}`
+                          : ""
+                      }`
+                    : "Not listed"}
+                </p>
 
-            <p style={popupTextStyle}>
-              <strong>Hours:</strong> {selectedCalendarEvent.hours}
-            </p>
+                <p style={popupTextStyle}>
+                  <strong>Location:</strong>{" "}
+                  {selectedCalendarEvent.opportunityLocation || "Not listed"}
+                </p>
 
-            <p style={popupTextStyle}>
-              <strong>Attachment:</strong>{" "}
-              {selectedCalendarEvent.attachmentUrl ? (
-                <a
-                  href={selectedCalendarEvent.attachmentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={attachmentLinkStyle}
-                >
-                  {selectedCalendarEvent.attachmentName || "Open Attachment"}
-                </a>
-              ) : (
-                "No attachment uploaded"
-              )}
-            </p>
+                <p style={popupTextStyle}>
+                  <strong>Hours:</strong>{" "}
+                  {selectedCalendarEvent.opportunityHours || "Not listed"}
+                </p>
 
-            <p style={popupTextStyle}>
-              <strong>Notes:</strong>{" "}
-              {selectedCalendarEvent.notes || "No notes entered"}
-            </p>
+                <p style={popupTextStyle}>
+                  <strong>Category:</strong>{" "}
+                  {selectedCalendarEvent.opportunityCategory || "Not listed"}
+                </p>
 
-            <p style={popupTextStyle}>
-              <strong>Signature:</strong> {selectedCalendarEvent.signature}
-            </p>
+                <p style={popupTextStyle}>
+                  <strong>Teacher:</strong>{" "}
+                  {selectedCalendarEvent.teacherName ||
+                    selectedCalendarEvent.teacherUsername ||
+                    "Not listed"}
+                </p>
 
-            <div style={confirmButtonRowStyle}>
-              <button
-                style={cancelButtonStyle}
-                onClick={() => setSelectedCalendarEvent(null)}
-              >
-                Close
-              </button>
+                <p style={popupTextStyle}>
+                  <strong>Teacher Signed:</strong>{" "}
+                  {selectedCalendarEvent.teacherSigned ? "Yes" : "No"}
+                </p>
 
-              <button
-                style={dangerButtonStyle}
-                onClick={() =>
-                  askToDeleteCalendarEvent(selectedCalendarEvent.id)
-                }
-              >
-                Delete Event
-              </button>
-            </div>
+                {selectedCalendarEvent.teacherSignedBy && (
+                  <p style={popupTextStyle}>
+                    <strong>Signed By:</strong>{" "}
+                    {selectedCalendarEvent.teacherSignedBy}
+                  </p>
+                )}
+
+                {selectedCalendarEvent.teacherSignedAt && (
+                  <p style={popupTextStyle}>
+                    <strong>Signed At:</strong>{" "}
+                    {selectedCalendarEvent.teacherSignedAt}
+                  </p>
+                )}
+
+                <div style={confirmButtonRowStyle}>
+                  <button
+                    style={cancelButtonStyle}
+                    onClick={() => setSelectedCalendarEvent(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={eventPopupTitleStyle}>
+                  {selectedCalendarEvent.activityName}
+                </h2>
+
+                <p style={popupTextStyle}>
+                  <strong>Type:</strong> Manual Tracked Hours
+                </p>
+
+                <p style={popupTextStyle}>
+                  <strong>Organization:</strong>{" "}
+                  {selectedCalendarEvent.organization}
+                </p>
+
+                <p style={popupTextStyle}>
+                  <strong>Contact:</strong>{" "}
+                  {selectedCalendarEvent.organizationContact || "Not provided"}
+                </p>
+
+                <p style={popupTextStyle}>
+                  <strong>Category:</strong> {selectedCalendarEvent.category}
+                </p>
+
+                <p style={popupTextStyle}>
+                  <strong>Date:</strong> {selectedCalendarEvent.date}
+                </p>
+
+                <p style={popupTextStyle}>
+                  <strong>Hours:</strong> {selectedCalendarEvent.hours}
+                </p>
+
+                <p style={popupTextStyle}>
+                  <strong>Attachment:</strong>{" "}
+                  {selectedCalendarEvent.attachmentUrl ? (
+                    <a
+                      href={selectedCalendarEvent.attachmentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={attachmentLinkStyle}
+                    >
+                      {selectedCalendarEvent.attachmentName || "Open Attachment"}
+                    </a>
+                  ) : (
+                    "No attachment uploaded"
+                  )}
+                </p>
+
+                <p style={popupTextStyle}>
+                  <strong>Notes:</strong>{" "}
+                  {selectedCalendarEvent.notes || "No notes entered"}
+                </p>
+
+                <p style={popupTextStyle}>
+                  <strong>Signature:</strong> {selectedCalendarEvent.signature}
+                </p>
+
+                <div style={confirmButtonRowStyle}>
+                  <button
+                    style={cancelButtonStyle}
+                    onClick={() => setSelectedCalendarEvent(null)}
+                  >
+                    Close
+                  </button>
+
+                  <button
+                    style={dangerButtonStyle}
+                    onClick={() =>
+                      askToDeleteCalendarEvent(selectedCalendarEvent.id)
+                    }
+                  >
+                    Delete Event
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -863,26 +1026,102 @@ export default function StudentProfilePage() {
 
           <h3 style={subTitleStyle}>Teacher Opportunity Status</h3>
 
+          <p style={helperTextStyle}>
+            Click a status below to see which opportunities are in that group.
+          </p>
+
           <div style={statusGridStyle}>
-            <div style={statusBoxStyle}>
-              <strong>Pending:</strong> {pendingSignups.length}
-            </div>
+            {teacherStatusOptions.map((option) => (
+              <button
+                key={option.key}
+                style={
+                  selectedTeacherStatus === option.key
+                    ? activeStatusButtonStyle
+                    : statusButtonStyle
+                }
+                onClick={() => setSelectedTeacherStatus(option.key)}
+              >
+                <strong>{option.label}:</strong> {option.count}
+              </button>
+            ))}
+          </div>
 
-            <div style={statusBoxStyle}>
-              <strong>Approved:</strong> {approvedSignups.length}
-            </div>
+          <div style={selectedStatusPanelStyle}>
+            <h3 style={selectedStatusTitleStyle}>
+              {selectedTeacherStatusOption.label} Opportunities
+            </h3>
 
-            <div style={statusBoxStyle}>
-              <strong>Needs Signature:</strong> {needsSignatureSignups.length}
-            </div>
+            {selectedTeacherStatusItems.length === 0 ? (
+              <p style={emptyTextStyle}>
+                No opportunities are currently in this status.
+              </p>
+            ) : (
+              <div style={listStyle}>
+                {selectedTeacherStatusItems.map((signup) => (
+                  <div style={listItemStyle} key={signup.id}>
+                    <h3 style={listTitleStyle}>
+                      {signup.opportunityTitle || "Untitled Opportunity"}
+                    </h3>
 
-            <div style={statusBoxStyle}>
-              <strong>Completed:</strong> {completedSignups.length}
-            </div>
+                    <p>
+                      <strong>Date:</strong>{" "}
+                      {signup.opportunityDate || "Not listed"}
+                    </p>
 
-            <div style={statusBoxStyle}>
-              <strong>Disapproved:</strong> {disapprovedSignups.length}
-            </div>
+                    <p>
+                      <strong>Time:</strong>{" "}
+                      {signup.opportunityStartTime || signup.opportunityEndTime
+                        ? `${signup.opportunityStartTime || ""} ${
+                            signup.opportunityEndTime
+                              ? `- ${signup.opportunityEndTime}`
+                              : ""
+                          }`
+                        : "Not listed"}
+                    </p>
+
+                    <p>
+                      <strong>Teacher:</strong>{" "}
+                      {signup.teacherName || signup.teacherUsername || "N/A"}
+                    </p>
+
+                    <p>
+                      <strong>Location:</strong>{" "}
+                      {signup.opportunityLocation || "N/A"}
+                    </p>
+
+                    <p>
+                      <strong>Hours:</strong>{" "}
+                      {signup.opportunityHours || "N/A"}
+                    </p>
+
+                    <p>
+                      <strong>Class:</strong> {signup.className || "N/A"}
+                    </p>
+
+                    <p>
+                      <strong>Status:</strong> {formatStatus(signup.status)}
+                    </p>
+
+                    <p>
+                      <strong>Teacher Signed:</strong>{" "}
+                      {signup.teacherSigned ? "Yes" : "No"}
+                    </p>
+
+                    {signup.teacherSignedBy && (
+                      <p>
+                        <strong>Signed By:</strong> {signup.teacherSignedBy}
+                      </p>
+                    )}
+
+                    {signup.teacherSignedAt && (
+                      <p>
+                        <strong>Signed At:</strong> {signup.teacherSignedAt}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -904,9 +1143,14 @@ export default function StudentProfilePage() {
           </div>
 
           <p style={calendarHelperTextStyle}>
-            Click a day to add a tracked event. Click an event name to view
-            details or delete it.
+            Click a day to add a manual tracked event. Click an event name to
+            view details. Teacher opportunities also appear on this calendar.
           </p>
+
+          <div style={calendarLegendStyle}>
+            <span style={manualLegendStyle}>Manual Hours</span>
+            <span style={teacherLegendStyle}>Teacher Opportunity</span>
+          </div>
 
           <div style={dayHeaderGridStyle}>
             {dayNames.map((dayName) => (
@@ -934,14 +1178,20 @@ export default function StudentProfilePage() {
 
                   {eventsForDay.map((entry) => (
                     <button
-                      key={entry.id}
-                      style={calendarEventButtonStyle}
+                      key={`${entry.calendarType}-${entry.id}`}
+                      style={
+                        entry.calendarType === "teacher"
+                          ? teacherCalendarEventButtonStyle
+                          : calendarEventButtonStyle
+                      }
                       onClick={(event) => {
                         event.stopPropagation();
                         setSelectedCalendarEvent(entry);
                       }}
                     >
-                      {entry.activityName}
+                      {entry.calendarType === "teacher"
+                        ? `Teacher: ${entry.opportunityTitle}`
+                        : entry.activityName}
                     </button>
                   ))}
 
@@ -1005,67 +1255,6 @@ export default function StudentProfilePage() {
             </div>
           )}
         </div>
-
-        <div style={activityCardStyle}>
-          <h2 style={sectionTitleStyle}>My Teacher Opportunities</h2>
-
-          <div style={statusGridStyle}>
-            <div style={statusBoxStyle}>
-              <strong>Pending:</strong> {pendingSignups.length}
-            </div>
-
-            <div style={statusBoxStyle}>
-              <strong>Approved:</strong> {approvedSignups.length}
-            </div>
-
-            <div style={statusBoxStyle}>
-              <strong>Needs Signature:</strong> {needsSignatureSignups.length}
-            </div>
-
-            <div style={statusBoxStyle}>
-              <strong>Completed:</strong> {completedSignups.length}
-            </div>
-
-            <div style={statusBoxStyle}>
-              <strong>Disapproved:</strong> {disapprovedSignups.length}
-            </div>
-          </div>
-
-          {myTeacherSignups.length === 0 ? (
-            <p style={emptyTextStyle}>No teacher event signups yet.</p>
-          ) : (
-            <div style={listStyle}>
-              {myTeacherSignups.map((signup) => (
-                <div style={listItemStyle} key={signup.id}>
-                  <h3 style={listTitleStyle}>{signup.opportunityTitle}</h3>
-
-                  <p>
-                    <strong>Teacher:</strong> {signup.teacherName}
-                  </p>
-
-                  <p>
-                    <strong>Location:</strong> {signup.opportunityLocation}
-                  </p>
-
-                  <p>
-                    <strong>Hours:</strong> {signup.opportunityHours}
-                  </p>
-
-                  <p>
-                    <strong>Status:</strong> {formatStatus(signup.status)}
-                  </p>
-
-                  {signup.teacherSigned && (
-                    <p>
-                      <strong>Teacher Signed At:</strong>{" "}
-                      {signup.teacherSignedAt}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </section>
     </main>
   );
@@ -1101,21 +1290,18 @@ const largeAvatarStyle = {
   alignItems: "center",
   justifyContent: "center",
   fontSize: "56px",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const titleStyle = {
   fontSize: "42px",
   color: "#111827",
   margin: 0,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const subtitleStyle = {
   fontSize: "18px",
   color: "#374151",
   lineHeight: "1.6",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const mainGridStyle = {
@@ -1157,6 +1343,13 @@ const subTitleStyle = {
   marginTop: "28px",
 };
 
+const helperTextStyle = {
+  color: "#6b7280",
+  fontSize: "15px",
+  marginTop: "-8px",
+  marginBottom: "14px",
+};
+
 const avatarGridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(4, 1fr)",
@@ -1170,7 +1363,6 @@ const avatarButtonStyle = {
   backgroundColor: "#f9fafb",
   cursor: "pointer",
   fontSize: "26px",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const selectedAvatarButtonStyle = {
@@ -1180,7 +1372,6 @@ const selectedAvatarButtonStyle = {
   backgroundColor: "#eff6ff",
   cursor: "pointer",
   fontSize: "26px",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const saveButtonStyle = {
@@ -1193,7 +1384,6 @@ const saveButtonStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const logoutButtonLargeStyle = {
@@ -1206,7 +1396,6 @@ const logoutButtonLargeStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const messageStyle = {
@@ -1214,7 +1403,6 @@ const messageStyle = {
   color: "#047857",
   fontWeight: 700,
   textAlign: "center",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const statsGridStyle = {
@@ -1235,13 +1423,11 @@ const statNumberStyle = {
   fontSize: "34px",
   color: "black",
   margin: 0,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const statTextStyle = {
   color: "#374151",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const statusGridStyle = {
@@ -1250,13 +1436,39 @@ const statusGridStyle = {
   gap: "12px",
 };
 
-const statusBoxStyle = {
+const statusButtonStyle = {
   backgroundColor: "#f9fafb",
   border: "1px solid #e5e7eb",
   color: "#374151",
   borderRadius: "10px",
   padding: "14px",
   textAlign: "center",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const activeStatusButtonStyle = {
+  backgroundColor: "#2563eb",
+  border: "1px solid #1d4ed8",
+  color: "white",
+  borderRadius: "10px",
+  padding: "14px",
+  textAlign: "center",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const selectedStatusPanelStyle = {
+  marginTop: "22px",
+  backgroundColor: "#f9fafb",
+  border: "1px solid #e5e7eb",
+  borderRadius: "14px",
+  padding: "20px",
+};
+
+const selectedStatusTitleStyle = {
+  color: "#111827",
+  marginTop: 0,
 };
 
 const calendarSectionStyle = {
@@ -1281,7 +1493,6 @@ const calendarHeaderStyle = {
 const calendarTitleStyle = {
   color: "#111827",
   fontSize: "28px",
-  fontFamily: "Roboto,Segoe UI, Arial",
   margin: 0,
 };
 
@@ -1293,12 +1504,38 @@ const monthButtonStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const calendarHelperTextStyle = {
   color: "#374151",
+  marginBottom: "14px",
+};
+
+const calendarLegendStyle = {
+  display: "flex",
+  gap: "12px",
   marginBottom: "20px",
+  flexWrap: "wrap",
+};
+
+const manualLegendStyle = {
+  backgroundColor: "#c7ebfa",
+  color: "#000000",
+  border: "1px solid blue",
+  borderRadius: "999px",
+  padding: "7px 12px",
+  fontWeight: 700,
+  fontSize: "13px",
+};
+
+const teacherLegendStyle = {
+  backgroundColor: "#fef3c7",
+  color: "#92400e",
+  border: "1px solid #f59e0b",
+  borderRadius: "999px",
+  padding: "7px 12px",
+  fontWeight: 700,
+  fontSize: "13px",
 };
 
 const dayHeaderGridStyle = {
@@ -1315,7 +1552,6 @@ const dayHeaderStyle = {
   textAlign: "center",
   borderRadius: "8px",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const calendarGridStyle = {
@@ -1345,7 +1581,6 @@ const dayNumberStyle = {
   color: "#111827",
   fontWeight: 700,
   margin: "0 0 8px",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const addHintStyle = {
@@ -1354,7 +1589,6 @@ const addHintStyle = {
   marginTop: "24px",
   textAlign: "center",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const calendarEventButtonStyle = {
@@ -1373,12 +1607,29 @@ const calendarEventButtonStyle = {
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-  fontFamily: "Roboto,Segoe UI, Arial",
+};
+
+const teacherCalendarEventButtonStyle = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  marginTop: "6px",
+  padding: "7px 8px",
+  backgroundColor: "#fef3c7",
+  color: "#92400e",
+  border: "1px solid #f59e0b",
+  borderRadius: "8px",
+  cursor: "pointer",
+  fontWeight: 700,
+  fontSize: "13px",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 
 const activitySectionStyle = {
   display: "grid",
-  gridTemplateColumns: "1fr 1fr",
+  gridTemplateColumns: "1fr",
   gap: "24px",
   padding: "0 40px 60px",
 };
@@ -1394,7 +1645,6 @@ const activityCardStyle = {
 const emptyTextStyle = {
   color: "#6b7280",
   fontSize: "16px",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const listStyle = {
@@ -1403,7 +1653,7 @@ const listStyle = {
 };
 
 const listItemStyle = {
-  backgroundColor: "#f9fafb",
+  backgroundColor: "white",
   color: "#374151",
   border: "1px solid #e5e7eb",
   borderRadius: "12px",
@@ -1465,21 +1715,18 @@ const eventPopupTitleStyle = {
   color: "#2563eb",
   fontSize: "30px",
   marginTop: 0,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const confirmTitleStyle = {
   color: "#111827",
   fontSize: "30px",
   marginBottom: "12px",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const popupTextStyle = {
   color: "#374151",
   fontSize: "17px",
   lineHeight: "1.5",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const confirmButtonRowStyle = {
@@ -1497,7 +1744,6 @@ const cancelButtonStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const dangerButtonStyle = {
@@ -1509,7 +1755,6 @@ const dangerButtonStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const saveEventButtonStyle = {
@@ -1521,7 +1766,6 @@ const saveEventButtonStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   fontWeight: 700,
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const labelStyle = {
@@ -1530,7 +1774,6 @@ const labelStyle = {
   marginTop: "18px",
   fontWeight: 600,
   color: "#111827",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const inputStyle = {
@@ -1541,7 +1784,6 @@ const inputStyle = {
   fontSize: "16px",
   color: "#111827",
   backgroundColor: "white",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const textAreaStyle = {
@@ -1553,7 +1795,6 @@ const textAreaStyle = {
   minHeight: "90px",
   color: "#111827",
   backgroundColor: "white",
-  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const attachmentTextStyle = {
