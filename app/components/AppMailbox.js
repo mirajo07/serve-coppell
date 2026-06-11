@@ -9,6 +9,7 @@ export default function AppMailbox() {
   const [signups, setSignups] = useState([]);
   const [opportunities, setOpportunities] = useState([]);
   const [feedbackMessages, setFeedbackMessages] = useState([]);
+  const [lastOpenedAt, setLastOpenedAt] = useState("");
 
   const [feedbackType, setFeedbackType] = useState("Bug");
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -24,6 +25,11 @@ export default function AppMailbox() {
       }
 
       setCurrentUser(user);
+
+      const storageKey = getMailboxStorageKey(user);
+      const savedLastOpenedAt = localStorage.getItem(storageKey) || "";
+      setLastOpenedAt(savedLastOpenedAt);
+
       await loadNotifications(user);
     }
 
@@ -84,6 +90,24 @@ export default function AppMailbox() {
     }
   }
 
+  function getMailboxStorageKey(user) {
+    return `vonnect-mailbox-last-opened-${user.role}-${user.username}`;
+  }
+
+  function getNotificationDateValue(item) {
+    if (!item || !item.date) {
+      return 0;
+    }
+
+    const dateValue = new Date(item.date).getTime();
+
+    if (Number.isNaN(dateValue)) {
+      return 0;
+    }
+
+    return dateValue;
+  }
+
   async function loadNotifications(user) {
     if (user.role === "student") {
       const { data: studentSignups } = await supabase
@@ -112,6 +136,8 @@ export default function AppMailbox() {
           .limit(10);
 
         setOpportunities(classOpportunities || []);
+      } else {
+        setOpportunities([]);
       }
     }
 
@@ -134,6 +160,8 @@ export default function AppMailbox() {
           .limit(25);
 
         setSignups(classSignups || []);
+      } else {
+        setSignups([]);
       }
 
       const { data: feedbackData } = await supabase
@@ -162,7 +190,7 @@ export default function AppMailbox() {
             id: `approved-${signup.id}`,
             title: "Opportunity Approved",
             text: `${signup.opportunity_title || "Your opportunity"} was approved.`,
-            date: signup.created_at,
+            date: signup.updated_at || signup.created_at,
           });
         }
 
@@ -171,7 +199,7 @@ export default function AppMailbox() {
             id: `completed-${signup.id}`,
             title: "Opportunity Completed",
             text: `${signup.opportunity_title || "Your opportunity"} was signed/completed.`,
-            date: signup.teacher_signed_at || signup.created_at,
+            date: signup.teacher_signed_at || signup.updated_at || signup.created_at,
           });
         }
 
@@ -180,7 +208,7 @@ export default function AppMailbox() {
             id: `signature-${signup.id}`,
             title: "Signature Needed",
             text: `${signup.opportunity_title || "An opportunity"} needs a teacher signature.`,
-            date: signup.created_at,
+            date: signup.updated_at || signup.created_at,
           });
         }
 
@@ -189,7 +217,7 @@ export default function AppMailbox() {
             id: `disapproved-${signup.id}`,
             title: "Opportunity Rejected",
             text: `${signup.opportunity_title || "Your opportunity"} was rejected.`,
-            date: signup.created_at,
+            date: signup.updated_at || signup.created_at,
           });
         }
       });
@@ -212,7 +240,9 @@ export default function AppMailbox() {
           items.push({
             id: `pending-${signup.id}`,
             title: "New Student Signup",
-            text: `${signup.student_username} signed up for ${signup.opportunity_title || "an opportunity"}.`,
+            text: `${signup.student_username} signed up for ${
+              signup.opportunity_title || "an opportunity"
+            }.`,
             date: signup.created_at,
           });
         }
@@ -221,8 +251,10 @@ export default function AppMailbox() {
           items.push({
             id: `teacher-signature-${signup.id}`,
             title: "Signature Needed",
-            text: `${signup.student_username} needs a signature for ${signup.opportunity_title || "an opportunity"}.`,
-            date: signup.created_at,
+            text: `${signup.student_username} needs a signature for ${
+              signup.opportunity_title || "an opportunity"
+            }.`,
+            date: signup.updated_at || signup.created_at,
           });
         }
       });
@@ -240,9 +272,38 @@ export default function AppMailbox() {
     }
 
     return items
-      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+      .sort((a, b) => getNotificationDateValue(b) - getNotificationDateValue(a))
       .slice(0, 30);
   }, [currentUser, signups, opportunities, feedbackMessages]);
+
+  const unreadNotifications = useMemo(() => {
+    if (!lastOpenedAt) {
+      return notifications;
+    }
+
+    const lastOpenedTime = new Date(lastOpenedAt).getTime();
+
+    if (Number.isNaN(lastOpenedTime)) {
+      return notifications;
+    }
+
+    return notifications.filter((item) => {
+      return getNotificationDateValue(item) > lastOpenedTime;
+    });
+  }, [notifications, lastOpenedAt]);
+
+  function toggleMailbox() {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+
+    if (nextOpen && currentUser) {
+      const openedAt = new Date().toISOString();
+      const storageKey = getMailboxStorageKey(currentUser);
+
+      localStorage.setItem(storageKey, openedAt);
+      setLastOpenedAt(openedAt);
+    }
+  }
 
   async function submitFeedback() {
     setMessage("");
@@ -287,10 +348,10 @@ export default function AppMailbox() {
 
   return (
     <div style={wrapperStyle}>
-      <button style={mailButtonStyle} onClick={() => setOpen(!open)}>
+      <button style={mailButtonStyle} onClick={toggleMailbox}>
         📬
-        {notifications.length > 0 && (
-          <span style={badgeStyle}>{notifications.length}</span>
+        {unreadNotifications.length > 0 && (
+          <span style={badgeStyle}>{unreadNotifications.length}</span>
         )}
       </button>
 
@@ -370,6 +431,7 @@ export default function AppMailbox() {
 const wrapperStyle = {
   position: "relative",
   display: "inline-block",
+  fontFamily: "Roboto,Segoe UI, Arial",
 };
 
 const mailButtonStyle = {

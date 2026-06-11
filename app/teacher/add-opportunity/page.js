@@ -410,8 +410,7 @@ export default function AddOpportunityPage() {
 
         <p style={subtitleStyle}>
           Logged in as {currentUser.displayName}. Opportunities you create will
-          appear to students in the selected shared class. Co-teachers attached
-          to the same class can also manage the class activity.
+          appear to students in the selected class. 
         </p>
 
         <p style={userInfoStyle}>
@@ -449,8 +448,7 @@ export default function AddOpportunityPage() {
           )}
 
           <p style={helperTextStyle}>
-            This opportunity is saved with the shared class ID, so both teachers
-            connected to this class can work with the same students.
+            
           </p>
 
           <label style={labelStyle}>Opportunity Title *</label>
@@ -562,11 +560,11 @@ export default function AddOpportunityPage() {
       </section>
 
       <section style={opportunityListSectionStyle}>
-        <h2 style={sectionTitleStyle}>Opportunities for My Shared Classes</h2>
+        <h2 style={sectionTitleStyle}>Posted Opportunities</h2>
 
         {teacherOpportunities.length === 0 ? (
           <p style={emptyTextStyle}>
-            There are no opportunities for your shared classes yet.
+            There are no posted opportunities for your class yet. Create now!
           </p>
         ) : (
           <div style={opportunityGridStyle}>

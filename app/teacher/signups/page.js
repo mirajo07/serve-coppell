@@ -346,9 +346,8 @@ export default function TeacherSignupsPage() {
       <section style={headerStyle}>
         <h1 style={titleStyle}>Review Student Signups</h1>
         <p style={subtitleStyle}>
-          Review signups for all shared classes where you are a teacher or
-          co-teacher. Both teachers attached to the class can approve, sign,
-          revive, disapprove, or delete the same signups.
+          Review signups for all classesBoth teachers attached to the class can approve, sign,
+          revive, disa. pprove, or delete the same signups.
         </p>
 
         <p style={userInfoStyle}>

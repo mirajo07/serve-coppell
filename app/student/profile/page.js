@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import StudentPdfExportButton from "../../components/StudentPdfExportButton";
-import AppMailbox from "@/app/components/AppMailbox";
 
 export default function StudentProfilePage() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -11,8 +10,7 @@ export default function StudentProfilePage() {
   const [volunteerHours, setVolunteerHours] = useState([]);
   const [signups, setSignups] = useState([]);
   const [message, setMessage] = useState("");
-  const [studentClassIds, setStudentClassIds] = useState([]);
-const [studentClassNames, setStudentClassNames] = useState([]);
+  const [studentClassNames, setStudentClassNames] = useState([]);
 
   const [selectedTeacherStatus, setSelectedTeacherStatus] = useState("pending");
 
@@ -70,94 +68,133 @@ const [studentClassNames, setStudentClassNames] = useState([]);
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   useEffect(() => {
-    async function loadStudentData() {
-      const authenticatedUser = await getAuthenticatedAppUser();
-
-      if (!authenticatedUser) {
-        window.location.href = "/login";
-        return;
-      }
-
-      if (authenticatedUser.role.toLowerCase() !== "student") {
-        window.location.href = "/teacher";
-        return;
-      }
-
-      setCurrentUser(authenticatedUser);
-      setSelectedAvatar(authenticatedUser.avatar || "🙂");
-
-      const { data: hoursData, error: hoursError } = await supabase
-        .from("volunteer_hours")
-        .select("*")
-        .eq("student_username", authenticatedUser.username)
-        .order("created_at", { ascending: false });
-
-      if (hoursError) {
-        console.error("Error loading student hours:", hoursError);
-        setMessage("Could not load volunteer hours.");
-      } else {
-        const formattedHours = hoursData.map((entry) => ({
-          id: entry.id,
-          eventType: "manual",
-          studentUsername: entry.student_username,
-          studentName: entry.student_name,
-          className: entry.class_name,
-          activityName: entry.event_name,
-          organization: entry.organization,
-          organizationContact: entry.organization_contact,
-          category: entry.category,
-          date: entry.event_date,
-          hours: entry.hours,
-          notes: entry.notes,
-          signature: entry.signature,
-          attachmentName: entry.attachment_name,
-          attachmentUrl: entry.attachment_url,
-          status: entry.status,
-        }));
-
-        setVolunteerHours(formattedHours);
-      }
-
-      const { data: signupData, error: signupError } = await supabase
-        .from("signups")
-        .select("*, opportunities(event_date, start_time, end_time, category)")
-        .eq("student_username", authenticatedUser.username)
-        .order("created_at", { ascending: false });
-
-      if (signupError) {
-        console.error("Error loading student signups:", signupError);
-        setMessage("Could not load teacher event signups.");
-      } else {
-        const formattedSignups = signupData.map((signup) => ({
-          id: signup.id,
-          eventType: "teacher",
-          studentUsername: signup.student_username,
-          studentName: signup.student_name,
-          className: signup.class_name,
-          opportunityId: signup.opportunity_id,
-          opportunityTitle: signup.opportunity_title,
-          opportunityLocation: signup.opportunity_location,
-          opportunityHours: signup.opportunity_hours,
-          opportunityDate: signup.opportunities?.event_date || "",
-          opportunityStartTime: signup.opportunities?.start_time || "",
-          opportunityEndTime: signup.opportunities?.end_time || "",
-          opportunityCategory:
-            signup.opportunities?.category || "Community Service",
-          teacherName: signup.teacher_name,
-          teacherUsername: signup.teacher_username,
-          status: signup.status,
-          source: signup.source,
-          teacherSigned: signup.teacher_signed,
-          teacherSignedBy: signup.teacher_signed_by,
-          teacherSignedAt: signup.teacher_signed_at,
-        }));
-
-        setSignups(formattedSignups);
-      }
-    }
-
     loadStudentData();
   }, []);
+
+  async function loadStudentData() {
+    const authenticatedUser = await getAuthenticatedAppUser();
+
+    if (!authenticatedUser) {
+      window.location.href = "/login";
+      return;
+    }
+
+    if (authenticatedUser.role.toLowerCase() !== "student") {
+      window.location.href = "/teacher";
+      return;
+    }
+
+    const { data: rosterData, error: rosterError } = await supabase
+      .from("class_rosters")
+      .select("class_id, class_name")
+      .eq("student_username", authenticatedUser.username);
+
+    if (rosterError) {
+      console.error("Error loading student shared classes:", rosterError);
+    }
+
+    const classIds = (rosterData || [])
+      .map((row) => row.class_id)
+      .filter(Boolean);
+
+    const classNames = [
+      ...new Set(
+        (rosterData || [])
+          .map((row) => row.class_name)
+          .filter(Boolean)
+      ),
+    ];
+
+    setStudentClassNames(classNames);
+
+    const userWithClassInfo = {
+      ...authenticatedUser,
+      className:
+        classNames.length > 0
+          ? classNames.join(", ")
+          : authenticatedUser.className || "Not assigned yet",
+      classIds,
+    };
+
+    setCurrentUser(userWithClassInfo);
+    setSelectedAvatar(authenticatedUser.avatar || "🙂");
+
+    const { data: hoursData, error: hoursError } = await supabase
+      .from("volunteer_hours")
+      .select("*")
+      .eq("student_username", authenticatedUser.username)
+      .order("created_at", { ascending: false });
+
+    if (hoursError) {
+      console.error("Error loading student hours:", hoursError);
+      setMessage("Could not load volunteer hours.");
+    } else {
+      const formattedHours = (hoursData || []).map((entry) => ({
+        id: entry.id,
+        eventType: "manual",
+        studentUsername: entry.student_username,
+        studentName: entry.student_name,
+        className: entry.class_name,
+        activityName: entry.event_name,
+        organization: entry.organization,
+        organizationContact: entry.organization_contact,
+        category: entry.category,
+        date: entry.event_date,
+        hours: entry.hours,
+        notes: entry.notes,
+        signature: entry.signature,
+        attachmentName: entry.attachment_name,
+        attachmentUrl: entry.attachment_url,
+        status: entry.status,
+      }));
+
+      setVolunteerHours(formattedHours);
+    }
+
+    let signupQuery = supabase
+      .from("signups")
+      .select("*, opportunities(event_date, start_time, end_time, category)")
+      .eq("student_username", authenticatedUser.username)
+      .order("created_at", { ascending: false });
+
+    if (classIds.length > 0) {
+      signupQuery = signupQuery.in("class_id", classIds);
+    }
+
+    const { data: signupData, error: signupError } = await signupQuery;
+
+    if (signupError) {
+      console.error("Error loading student signups:", signupError);
+      setMessage("Could not load teacher event signups.");
+    } else {
+      const formattedSignups = (signupData || []).map((signup) => ({
+        id: signup.id,
+        classId: signup.class_id,
+        eventType: "teacher",
+        studentUsername: signup.student_username,
+        studentName: signup.student_name,
+        className: signup.class_name,
+        opportunityId: signup.opportunity_id,
+        opportunityTitle: signup.opportunity_title,
+        opportunityLocation: signup.opportunity_location,
+        opportunityHours: signup.opportunity_hours,
+        opportunityDate: signup.opportunities?.event_date || "",
+        opportunityStartTime: signup.opportunities?.start_time || "",
+        opportunityEndTime: signup.opportunities?.end_time || "",
+        opportunityCategory:
+          signup.opportunities?.category || "Community Service",
+        teacherName: signup.teacher_name,
+        teacherUsername: signup.teacher_username,
+        status: signup.status,
+        source: signup.source,
+        teacherSigned: signup.teacher_signed,
+        teacherSignedBy: signup.teacher_signed_by,
+        teacherSignedAt: signup.teacher_signed_at,
+      }));
+
+      setSignups(formattedSignups);
+    }
+  }
 
   async function getAuthenticatedAppUser() {
     try {
@@ -338,7 +375,10 @@ const [studentClassNames, setStudentClassNames] = useState([]);
     const newEntryForSupabase = {
       student_username: currentUser.username,
       student_name: currentUser.displayName,
-      class_name: currentUser.className || "",
+      class_name:
+        studentClassNames.length > 0
+          ? studentClassNames[0]
+          : currentUser.className || "",
       event_name: newActivityName,
       organization: newOrganization,
       organization_contact: newOrganizationContact,
@@ -443,7 +483,11 @@ const [studentClassNames, setStudentClassNames] = useState([]);
   }
 
   if (!currentUser) {
-    return null;
+    return (
+      <main style={pageStyle}>
+        <p style={{ padding: "40px" }}>Loading student dashboard...</p>
+      </main>
+    );
   }
 
   const myManualHours = volunteerHours.filter((entry) => {
@@ -451,7 +495,7 @@ const [studentClassNames, setStudentClassNames] = useState([]);
   });
 
   const myManualHourTotal = myManualHours.reduce((total, entry) => {
-    return total + Number(entry.hours);
+    return total + Number(entry.hours || 0);
   }, 0);
 
   const myTeacherSignups = signups.filter((signup) => {
@@ -467,7 +511,7 @@ const [studentClassNames, setStudentClassNames] = useState([]);
 
   const myCompletedTeacherHours = myCompletedTeacherEvents.reduce(
     (total, signup) => {
-      return total + Number(signup.opportunityHours);
+      return total + Number(signup.opportunityHours || 0);
     },
     0
   );
@@ -971,7 +1015,10 @@ const [studentClassNames, setStudentClassNames] = useState([]);
           </p>
 
           <p style={cardTextStyle}>
-            <strong>Class:</strong> {currentUser.className}
+            <strong>Class:</strong>{" "}
+            {studentClassNames.length > 0
+              ? studentClassNames.join(", ")
+              : currentUser.className || "Not assigned yet"}
           </p>
 
           <p style={cardTextStyle}>
@@ -1143,8 +1190,7 @@ const [studentClassNames, setStudentClassNames] = useState([]);
           </div>
 
           <p style={calendarHelperTextStyle}>
-            Click a day to add a manual tracked event. Click an event name to
-            view details. Teacher opportunities also appear on this calendar.
+            Click on a day to add hours or view details of existing events.
           </p>
 
           <div style={calendarLegendStyle}>

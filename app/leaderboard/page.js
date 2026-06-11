@@ -413,7 +413,7 @@ export default function LeaderboardPage() {
           <h2 style={categoryMainTitleStyle}>Top 3 Students by Category</h2>
 
           <p style={categoryMainTextStyle}>
-            These rankings only count hours from that specific category.
+            
           </p>
         </div>
 
